@@ -1,0 +1,18 @@
+[package]
+name = "http-date-rs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Parsing and formatting of HTTP date values (RFC 9110)"
+license = "MIT OR Apache-2.0"
+keywords = ["http", "date", "rfc9110", "rfc7231"]
+categories = ["date-and-time", "web-programming::http"]
+
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
