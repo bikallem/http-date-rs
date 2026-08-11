@@ -342,7 +342,7 @@ mod tests {
     }
 
     // Test cases for punctuation_tok
-    #[test]
+
     #[test]
     fn punctuation_tok_parses_comma() {
         let mut d = Decoder::new(",06 Nov");
