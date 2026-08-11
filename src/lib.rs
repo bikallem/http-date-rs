@@ -128,10 +128,13 @@ impl Decoder<'_> {
 
     fn digits(&mut self, n: usize) -> Result<i32, DecodeError> {
         let buf = self.buf.as_bytes();
+        let mut value: i32 = 0;
         for i in 0..n {
             let pos = self.pos + i;
             match buf.get(pos) {
-                Some(b'0'..=b'9') => continue,
+                Some(&c @ b'0'..=b'9') => {
+                    value = value * 10 + (c - b'0') as i32;
+                }
                 Some(&c) => {
                     return Err(DecodeError::new(format!(
                         "Expected digit at position {}, but found {}",
@@ -141,7 +144,16 @@ impl Decoder<'_> {
                 None => return Err(DecodeError::new("Unexpected end of input")),
             }
         }
-        Ok(0)
+        self.advance(n);
+        Ok(value)
+    }
+
+    fn year(&mut self) -> Result<i32, DecodeError> {
+        self.digits(4)
+    }
+
+    fn day(&mut self) -> Result<i32, DecodeError> {
+        self.digits(2)
     }
 }
 
@@ -168,7 +180,8 @@ mod tests {
 
     #[test]
     fn expect_at_end_of_input_returns_error() {
-        let mut d = Decoder { buf: "ab", pos: 2 };
+        let mut d = Decoder::new("ab");
+        d.pos = 2;
         let err = d.expect(b'a').unwrap_err();
         assert_eq!(err.to_string(), "DecodeError: Unexpected end of input");
         assert_eq!(d.pos, 2);
@@ -199,12 +212,14 @@ mod tests {
         d.comma().unwrap();
         d.space().unwrap();
         // day-of-month(06)
-        d.expect(b'0').unwrap();
-        d.expect(b'6').unwrap();
+        assert_eq!(d.day().unwrap(), 6);
         d.space().unwrap();
         // month(Nov)
         let month = d.month().unwrap();
         assert_eq!(month, 11);
-        assert_eq!(d.pos, 11); // consumed "Sun, 06 Nov"
+        d.space().unwrap();
+        // year(1994)
+        assert_eq!(d.year().unwrap(), 1994);
+        assert_eq!(d.pos, 16); // consumed "Sun, 06 Nov 1994"
     }
 }
