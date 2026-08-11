@@ -4,6 +4,9 @@
 //! An HTTP date is an IMF-fixdate, e.g. `Sun, 06 Nov 1994 08:49:37 GMT`.
 //! The public API will be added here.
 
+use std::fmt;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodeError(String);
 
 impl DecodeError {
