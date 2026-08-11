@@ -26,13 +26,13 @@ impl std::error::Error for DecodeError {}
 /* ------------------- decoder ------------------- */
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum DaynNameTok {
-    Short(DaynName),
-    Long(DaynName),
+enum DayNameTok {
+    Short(DayName),
+    Long(DayName),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum DaynName {
+pub enum DayName {
     Mon,
     Tue,
     Wed,
