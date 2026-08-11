@@ -95,6 +95,32 @@ impl Decoder<'_> {
     fn colon(&mut self) -> Result<(), DecodeError> {
         self.expect(b':')
     }
+
+    fn month(&mut self) -> Result<i32, DecodeError> {
+        let m = self
+            .buf
+            .get(self.pos..self.pos + 3)
+            .ok_or_else(|| DecodeError::new("Unexpected end of input"))?;
+        let n = match m {
+            "Jan" => 1,
+            "Feb" => 2,
+            "Mar" => 3,
+            "Apr" => 4,
+            "May" => 5,
+            "Jun" => 6,
+            "Jul" => 7,
+            "Aug" => 8,
+            "Sep" => 9,
+            "Oct" => 10,
+            "Nov" => 11,
+            "Dec" => 12,
+            _ => {
+                return Err(DecodeError::new(format!("Invalid month value: {}", m)));
+            }
+        };
+        self.advance(3);
+        Ok(n)
+    }
 }
 
 /* ------------------- tests ------------------- */
@@ -142,5 +168,27 @@ mod tests {
         d.expect(b'0').unwrap();
         d.expect(b'6').unwrap();
         assert_eq!(d.pos, 7); // consumed "Sun, 06"
+    }
+
+    #[test]
+    fn parsing_date_sequence_with_month_advances_through_input() {
+        let mut d = Decoder {
+            buf: "Sun, 06 Nov 1994",
+            pos: 0,
+        };
+        // weekday(Sun)
+        d.expect(b'S').unwrap();
+        d.expect(b'u').unwrap();
+        d.expect(b'n').unwrap();
+        d.comma().unwrap();
+        d.space().unwrap();
+        // day-of-month(06)
+        d.expect(b'0').unwrap();
+        d.expect(b'6').unwrap();
+        d.space().unwrap();
+        // month(Nov)
+        let month = d.month().unwrap();
+        assert_eq!(month, 11);
+        assert_eq!(d.pos, 11); // consumed "Sun, 06 Nov"
     }
 }
