@@ -58,4 +58,12 @@ impl Decoder<'_> {
     fn advance(&mut self, n: usize) {
         self.pos += n;
     }
+
+    fn byte_at(&self, idx: usize) -> Result<u8, DecodeError> {
+        self.buf
+            .as_bytes()
+            .get(idx)
+            .copied()
+            .ok_or_else(|| DecodeError::new("Unexpected end of input"))
+    }
 }
