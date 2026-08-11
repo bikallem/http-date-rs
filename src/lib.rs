@@ -80,6 +80,21 @@ impl Decoder<'_> {
             )))
         }
     }
+
+    #[inline(always)]
+    fn space(&mut self) -> Result<(), DecodeError> {
+        self.expect(b' ')
+    }
+
+    #[inline(always)]
+    fn comma(&mut self) -> Result<(), DecodeError> {
+        self.expect(b',')
+    }
+
+    #[inline(always)]
+    fn colon(&mut self) -> Result<(), DecodeError> {
+        self.expect(b':')
+    }
 }
 
 /* ------------------- tests ------------------- */
@@ -109,5 +124,23 @@ mod tests {
         let err = d.expect(b'a').unwrap_err();
         assert_eq!(err.to_string(), "DecodeError: Unexpected end of input");
         assert_eq!(d.pos, 2);
+    }
+
+    #[test]
+    fn parsing_punctuated_sequence_advances_through_input() {
+        let mut d = Decoder {
+            buf: "Sun, 06",
+            pos: 0,
+        };
+        // weekday(Sun)
+        d.expect(b'S').unwrap();
+        d.expect(b'u').unwrap();
+        d.expect(b'n').unwrap();
+        d.comma().unwrap();
+        d.space().unwrap();
+        // day-of-month(06)
+        d.expect(b'0').unwrap();
+        d.expect(b'6').unwrap();
+        assert_eq!(d.pos, 7); // consumed "Sun, 06"
     }
 }
