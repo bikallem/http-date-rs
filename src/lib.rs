@@ -6,25 +6,6 @@
 
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DecodeError(String);
-
-impl DecodeError {
-    pub fn new(msg: impl Into<String>) -> Self {
-        Self(msg.into())
-    }
-}
-
-impl fmt::Display for DecodeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "DecodeError: {}", self.0)
-    }
-}
-
-impl std::error::Error for DecodeError {}
-
-/* ------------------- decoder ------------------- */
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum DayNameTok {
     Short(DayName),
@@ -47,6 +28,45 @@ enum PunctuationTok {
     Comma,
     Space,
 }
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Date {
+    pub year: i32,
+    pub month: i32,
+    pub day: i32,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct Time {
+    pub hour: i32,
+    pub minute: i32,
+    pub second: i32,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct DateTime {
+    pub dayname: DayName,
+    pub date: Date,
+    pub time: Time,
+}
+
+/* ------------------- decoder ------------------- */
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodeError(String);
+
+impl DecodeError {
+    pub fn new(msg: impl Into<String>) -> Self {
+        Self(msg.into())
+    }
+}
+
+impl fmt::Display for DecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "DecodeError: {}", self.0)
+    }
+}
+
+impl std::error::Error for DecodeError {}
 
 struct Decoder<'a> {
     buf: &'a str,
@@ -205,6 +225,39 @@ impl Decoder<'_> {
         };
         self.advance(1);
         Ok(tok)
+    }
+
+    fn date1(&mut self) -> Result<Date, DecodeError> {
+        let day = self.day()?;
+        self.space()?;
+        let month = self.month()?;
+        self.space()?;
+        let year = self.year()?;
+        Ok(Date { year, month, day })
+    }
+
+    fn time(&mut self) -> Result<Time, DecodeError> {
+        let hour = self.digits(2)?;
+        self.colon()?;
+        let minute = self.digits(2)?;
+        self.colon()?;
+        let second = self.digits(2)?;
+        Ok(Time {
+            hour,
+            minute,
+            second,
+        })
+    }
+
+    fn gmt(&mut self) -> Result<(), DecodeError> {
+        let s = self.string();
+        if s != "GMT" {
+            return Err(DecodeError::new(format!(
+                "Expected 'GMT', but found '{}'",
+                s
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -396,5 +449,104 @@ mod tests {
         let err = d.punctuation_tok().unwrap_err();
         assert_eq!(err.to_string(), "DecodeError: Unexpected end of input");
         assert_eq!(d.pos, 2);
+    }
+
+    // Test cases for date1
+
+    #[test]
+    fn date1_parses_valid_date() {
+        let mut d = Decoder::new("06 Nov 1994");
+        assert_eq!(
+            d.date1(),
+            Ok(Date {
+                year: 1994,
+                month: 11,
+                day: 6
+            })
+        );
+        assert_eq!(d.pos, 11); // consumed "06 Nov 1994"
+    }
+
+    #[test]
+    fn date1_parses_leading_zero_day() {
+        let mut d = Decoder::new("01 Jan 2000");
+        assert_eq!(
+            d.date1(),
+            Ok(Date {
+                year: 2000,
+                month: 1,
+                day: 1
+            })
+        );
+        assert_eq!(d.pos, 11);
+    }
+
+    #[test]
+    fn date1_rejects_non_digit_day() {
+        let mut d = Decoder::new("0x Nov 1994");
+        let err = d.date1().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Expected digit at position 1, but found x")
+        );
+    }
+
+    #[test]
+    fn date1_rejects_missing_space_after_day() {
+        let mut d = Decoder::new("06Nov 1994");
+        let err = d.date1().unwrap_err();
+        assert!(err.to_string().contains("but found N"));
+    }
+
+    #[test]
+    fn date1_rejects_invalid_month() {
+        let mut d = Decoder::new("06 Xyz 1994");
+        let err = d.date1().unwrap_err();
+        assert!(err.to_string().contains("Invalid month value: Xyz"));
+    }
+
+    #[test]
+    fn date1_rejects_truncated_year() {
+        let mut d = Decoder::new("06 Nov 19");
+        let err = d.date1().unwrap_err();
+        assert_eq!(err.to_string(), "DecodeError: Unexpected end of input");
+    }
+
+    #[test]
+    fn time_parses_valid_time() {
+        let mut d = Decoder::new("08:49:37 GMT");
+        assert_eq!(
+            d.time(),
+            Ok(Time {
+                hour: 8,
+                minute: 49,
+                second: 37
+            })
+        );
+        assert_eq!(d.pos, 8); // consumed "08:49:37"
+    }
+
+    #[test]
+    fn time_rejects_missing_colon() {
+        let mut d = Decoder::new("0849:37");
+        let err = d.time().unwrap_err();
+        assert!(err.to_string().contains("but found 4"));
+    }
+
+    #[test]
+    fn time_rejects_non_digit_minute() {
+        let mut d = Decoder::new("08:x9:37");
+        let err = d.time().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Expected digit at position 3, but found x")
+        );
+    }
+
+    #[test]
+    fn time_rejects_truncated_seconds() {
+        let mut d = Decoder::new("08:49:3");
+        let err = d.time().unwrap_err();
+        assert_eq!(err.to_string(), "DecodeError: Unexpected end of input");
     }
 }
