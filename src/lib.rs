@@ -155,6 +155,19 @@ impl Decoder<'_> {
     fn day(&mut self) -> Result<i32, DecodeError> {
         self.digits(2)
     }
+
+    fn string(&mut self) -> String {
+        let mut out = String::with_capacity(5);
+        while self.pos < self.buf.len() {
+            let c = self.buf.as_bytes()[self.pos];
+            if !c.is_ascii_alphabetic() {
+                break;
+            }
+            out.push(c as char);
+            self.advance(1);
+        }
+        out
+    }
 }
 
 /* ------------------- tests ------------------- */
@@ -221,5 +234,34 @@ mod tests {
         // year(1994)
         assert_eq!(d.year().unwrap(), 1994);
         assert_eq!(d.pos, 16); // consumed "Sun, 06 Nov 1994"
+    }
+
+    #[test]
+    fn string_reads_alphabetic_run_and_advances() {
+        let mut d = Decoder::new("Sun, 06");
+        assert_eq!(d.string(), "Sun");
+        assert_eq!(d.pos, 3); // consumed "Sun"
+    }
+
+    #[test]
+    fn string_reads_to_end_of_input() {
+        let mut d = Decoder::new("GMT");
+        assert_eq!(d.string(), "GMT");
+        assert_eq!(d.pos, 3); // consumed "GMT"
+    }
+
+    #[test]
+    fn string_returns_empty_when_current_byte_is_not_alphabetic() {
+        let mut d = Decoder::new("123");
+        assert_eq!(d.string(), "");
+        assert_eq!(d.pos, 0); // position should not advance
+    }
+
+    #[test]
+    fn string_returns_empty_at_end_of_input() {
+        let mut d = Decoder::new("Sun,");
+        d.pos = 4; // position at end of input
+        assert_eq!(d.string(), "");
+        assert_eq!(d.pos, 4); // position should not advance
     }
 }
