@@ -183,6 +183,22 @@ impl Decoder<'_> {
         };
         Ok(DayNameTok::Short(dayname))
     }
+
+    fn punctuation_tok(&mut self) -> Result<PunctuationTok, DecodeError> {
+        let c = self.byte_at(self.pos)?;
+        let tok = match c {
+            b',' => PunctuationTok::Comma,
+            b' ' => PunctuationTok::Space,
+            _ => {
+                return Err(DecodeError::new(format!(
+                    "Expected punctuation at position {}, but found {}",
+                    self.pos, c as char
+                )));
+            }
+        };
+        self.advance(1);
+        Ok(tok)
+    }
 }
 
 /* ------------------- tests ------------------- */
@@ -280,6 +296,8 @@ mod tests {
         assert_eq!(d.pos, 4); // position should not advance
     }
 
+    // Test cases for dayname_tok
+
     #[test]
     fn dayname_tok_parses_all_valid_names() {
         let daynames = [
@@ -321,5 +339,41 @@ mod tests {
         let result = d.dayname_tok();
         assert!(result.is_err());
         assert_eq!(d.pos, 0); // position should not advance
+    }
+
+    // Test cases for punctuation_tok
+    #[test]
+    #[test]
+    fn punctuation_tok_parses_comma() {
+        let mut d = Decoder::new(",06 Nov");
+        assert_eq!(d.punctuation_tok(), Ok(PunctuationTok::Comma));
+        assert_eq!(d.pos, 1);
+    }
+
+    #[test]
+    fn punctuation_tok_parses_space() {
+        let mut d = Decoder::new(" 06 Nov");
+        assert_eq!(d.punctuation_tok(), Ok(PunctuationTok::Space));
+        assert_eq!(d.pos, 1);
+    }
+
+    #[test]
+    fn punctuation_tok_rejects_non_punctuation() {
+        let mut d = Decoder::new("06 Nov");
+        let err = d.punctuation_tok().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Expected punctuation at position 0, but found 0")
+        );
+        assert_eq!(d.pos, 0); // position unchanged on error
+    }
+
+    #[test]
+    fn punctuation_tok_at_end_of_input_returns_error() {
+        let mut d = Decoder::new("06");
+        d.pos = 2; // at end of input
+        let err = d.punctuation_tok().unwrap_err();
+        assert_eq!(err.to_string(), "DecodeError: Unexpected end of input");
+        assert_eq!(d.pos, 2);
     }
 }
