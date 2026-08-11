@@ -59,6 +59,7 @@ impl Decoder<'_> {
         self.pos += n;
     }
 
+    #[inline]
     fn byte_at(&self, idx: usize) -> Result<u8, DecodeError> {
         self.buf
             .as_bytes()
