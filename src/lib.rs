@@ -172,16 +172,23 @@ impl Decoder<'_> {
     fn dayname_tok(&mut self) -> Result<DayNameTok, DecodeError> {
         let s = self.string();
         let dayname = match s.as_str() {
-            "Mon" => DayName::Mon,
-            "Tue" => DayName::Tue,
-            "Wed" => DayName::Wed,
-            "Thu" => DayName::Thu,
-            "Fri" => DayName::Fri,
-            "Sat" => DayName::Sat,
-            "Sun" => DayName::Sun,
+            "Mon" => DayNameTok::Short(DayName::Mon),
+            "Tue" => DayNameTok::Short(DayName::Tue),
+            "Wed" => DayNameTok::Short(DayName::Wed),
+            "Thu" => DayNameTok::Short(DayName::Thu),
+            "Fri" => DayNameTok::Short(DayName::Fri),
+            "Sat" => DayNameTok::Short(DayName::Sat),
+            "Sun" => DayNameTok::Short(DayName::Sun),
+            "Monday" => DayNameTok::Long(DayName::Mon),
+            "Tuesday" => DayNameTok::Long(DayName::Tue),
+            "Wednesday" => DayNameTok::Long(DayName::Wed),
+            "Thursday" => DayNameTok::Long(DayName::Thu),
+            "Friday" => DayNameTok::Long(DayName::Fri),
+            "Saturday" => DayNameTok::Long(DayName::Sat),
+            "Sunday" => DayNameTok::Long(DayName::Sun),
             _ => return Err(DecodeError::new(format!("Invalid day name: {}", s))),
         };
-        Ok(DayNameTok::Short(dayname))
+        Ok(dayname)
     }
 
     fn punctuation_tok(&mut self) -> Result<PunctuationTok, DecodeError> {
@@ -299,21 +306,27 @@ mod tests {
     // Test cases for dayname_tok
 
     #[test]
-    fn dayname_tok_parses_all_valid_names() {
-        let daynames = [
-            ("Mon", DayName::Mon),
-            ("Tue", DayName::Tue),
-            ("Wed", DayName::Wed),
-            ("Thu", DayName::Thu),
-            ("Fri", DayName::Fri),
-            ("Sat", DayName::Sat),
-            ("Sun", DayName::Sun),
+    fn dayname_tok_parses_all_names() {
+        let cases = [
+            ("Mon", DayNameTok::Short(DayName::Mon)),
+            ("Tue", DayNameTok::Short(DayName::Tue)),
+            ("Wed", DayNameTok::Short(DayName::Wed)),
+            ("Thu", DayNameTok::Short(DayName::Thu)),
+            ("Fri", DayNameTok::Short(DayName::Fri)),
+            ("Sat", DayNameTok::Short(DayName::Sat)),
+            ("Sun", DayNameTok::Short(DayName::Sun)),
+            ("Monday", DayNameTok::Long(DayName::Mon)),
+            ("Tuesday", DayNameTok::Long(DayName::Tue)),
+            ("Wednesday", DayNameTok::Long(DayName::Wed)),
+            ("Thursday", DayNameTok::Long(DayName::Thu)),
+            ("Friday", DayNameTok::Long(DayName::Fri)),
+            ("Saturday", DayNameTok::Long(DayName::Sat)),
+            ("Sunday", DayNameTok::Long(DayName::Sun)),
         ];
-        for (s, expected) in daynames.iter() {
+        for (s, expected) in cases {
             let mut d = Decoder::new(s);
-            let tok = d.dayname_tok().unwrap();
-            assert_eq!(tok, DayNameTok::Short(*expected));
-            assert_eq!(d.pos, 3); // consumed the day name
+            assert_eq!(d.dayname_tok(), Ok(expected), "day name {s}");
+            assert_eq!(d.pos, s.len(), "pos after {s}");
         }
     }
 
@@ -339,6 +352,14 @@ mod tests {
         let result = d.dayname_tok();
         assert!(result.is_err());
         assert_eq!(d.pos, 0); // position should not advance
+    }
+
+    #[test]
+    fn dayname_tok_rejects_truncated_long_name() {
+        let mut d = Decoder::new("Wednes");
+        let result = d.dayname_tok();
+        assert!(result.is_err());
+        assert_eq!(d.pos, 6); // consumed the partial name
     }
 
     // Test cases for punctuation_tok
