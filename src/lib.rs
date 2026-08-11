@@ -168,6 +168,21 @@ impl Decoder<'_> {
         }
         out
     }
+
+    fn dayname_tok(&mut self) -> Result<DayNameTok, DecodeError> {
+        let s = self.string();
+        let dayname = match s.as_str() {
+            "Mon" => DayName::Mon,
+            "Tue" => DayName::Tue,
+            "Wed" => DayName::Wed,
+            "Thu" => DayName::Thu,
+            "Fri" => DayName::Fri,
+            "Sat" => DayName::Sat,
+            "Sun" => DayName::Sun,
+            _ => return Err(DecodeError::new(format!("Invalid day name: {}", s))),
+        };
+        Ok(DayNameTok::Short(dayname))
+    }
 }
 
 /* ------------------- tests ------------------- */
@@ -263,5 +278,48 @@ mod tests {
         d.pos = 4; // position at end of input
         assert_eq!(d.string(), "");
         assert_eq!(d.pos, 4); // position should not advance
+    }
+
+    #[test]
+    fn dayname_tok_parses_all_valid_names() {
+        let daynames = [
+            ("Mon", DayName::Mon),
+            ("Tue", DayName::Tue),
+            ("Wed", DayName::Wed),
+            ("Thu", DayName::Thu),
+            ("Fri", DayName::Fri),
+            ("Sat", DayName::Sat),
+            ("Sun", DayName::Sun),
+        ];
+        for (s, expected) in daynames.iter() {
+            let mut d = Decoder::new(s);
+            let tok = d.dayname_tok().unwrap();
+            assert_eq!(tok, DayNameTok::Short(*expected));
+            assert_eq!(d.pos, 3); // consumed the day name
+        }
+    }
+
+    #[test]
+    fn dayname_tok_rejects_invalid_name() {
+        let mut d = Decoder::new("Funday");
+        let result = d.dayname_tok();
+        assert!(result.is_err());
+        assert_eq!(d.pos, 6); // consumed the invalid name
+    }
+
+    #[test]
+    fn dayname_tok_is_case_sensitive() {
+        let mut d = Decoder::new("mon");
+        let result = d.dayname_tok();
+        assert!(result.is_err());
+        assert_eq!(d.pos, 3); // consumed the invalid name
+    }
+
+    #[test]
+    fn dayname_tok_rejects_empty_run() {
+        let mut d = Decoder::new(", 06 Nov 1994");
+        let result = d.dayname_tok();
+        assert!(result.is_err());
+        assert_eq!(d.pos, 0); // position should not advance
     }
 }
