@@ -67,4 +67,47 @@ impl Decoder<'_> {
             .copied()
             .ok_or_else(|| DecodeError::new("Unexpected end of input"))
     }
+
+    fn expect(&mut self, expected: u8) -> Result<(), DecodeError> {
+        let actual = self.byte_at(self.pos)?;
+        if actual == expected {
+            self.advance(1);
+            Ok(())
+        } else {
+            Err(DecodeError::new(format!(
+                "Expected byte {}, but found {}",
+                expected as char, actual as char
+            )))
+        }
+    }
+}
+
+/* ------------------- tests ------------------- */
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expect_matching_byte_advances_position() {
+        let mut d = Decoder { buf: "abc", pos: 0 };
+        assert_eq!(d.expect(b'a'), Ok(()));
+        assert_eq!(d.pos, 1);
+    }
+
+    #[test]
+    fn expect_mismatched_byte_returns_error() {
+        let mut d = Decoder { buf: "abc", pos: 0 };
+        let result = d.expect(b'b');
+        assert!(result.is_err());
+        assert_eq!(d.pos, 0); // Position should not advance on error
+    }
+
+    #[test]
+    fn expect_at_end_of_input_returns_error() {
+        let mut d = Decoder { buf: "ab", pos: 2 };
+        let err = d.expect(b'a').unwrap_err();
+        assert_eq!(err.to_string(), "DecodeError: Unexpected end of input");
+        assert_eq!(d.pos, 2);
+    }
 }

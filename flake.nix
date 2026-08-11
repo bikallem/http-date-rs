@@ -10,8 +10,15 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      rust-overlay,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = import nixpkgs {
           inherit system;
@@ -33,14 +40,18 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ toolchain ];
+          packages = [
+            toolchain
+            pkgs.cargo-nextest
+          ];
 
           # rust-analyzer needs the stdlib sources from the rust-src component.
           RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
 
           shellHook = ''
-            echo "http-date-rs dev shell: $(rustc --version) (rustfmt, clippy, rust-analyzer included)"
+            echo "http-date-rs dev shell: $(rustc --version) (rustfmt, clippy, rust-analyzer, nextest included)"
           '';
         };
-      });
+      }
+    );
 }
