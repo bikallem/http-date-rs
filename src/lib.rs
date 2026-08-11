@@ -54,6 +54,10 @@ struct Decoder<'a> {
 }
 
 impl Decoder<'_> {
+    fn new(buf: &str) -> Decoder<'_> {
+        Decoder { buf, pos: 0 }
+    }
+
     #[inline(always)]
     fn advance(&mut self, n: usize) {
         self.pos += n;
@@ -121,6 +125,24 @@ impl Decoder<'_> {
         self.advance(3);
         Ok(n)
     }
+
+    fn digits(&mut self, n: usize) -> Result<i32, DecodeError> {
+        let buf = self.buf.as_bytes();
+        for i in 0..n {
+            let pos = self.pos + i;
+            match buf.get(pos) {
+                Some(b'0'..=b'9') => continue,
+                Some(&c) => {
+                    return Err(DecodeError::new(format!(
+                        "Expected digit at position {}, but found {}",
+                        pos, c as char
+                    )));
+                }
+                None => return Err(DecodeError::new("Unexpected end of input")),
+            }
+        }
+        Ok(0)
+    }
 }
 
 /* ------------------- tests ------------------- */
@@ -131,14 +153,14 @@ mod tests {
 
     #[test]
     fn expect_matching_byte_advances_position() {
-        let mut d = Decoder { buf: "abc", pos: 0 };
+        let mut d = Decoder::new("abc");
         assert_eq!(d.expect(b'a'), Ok(()));
         assert_eq!(d.pos, 1);
     }
 
     #[test]
     fn expect_mismatched_byte_returns_error() {
-        let mut d = Decoder { buf: "abc", pos: 0 };
+        let mut d = Decoder::new("abc");
         let result = d.expect(b'b');
         assert!(result.is_err());
         assert_eq!(d.pos, 0); // Position should not advance on error
@@ -154,10 +176,7 @@ mod tests {
 
     #[test]
     fn parsing_punctuated_sequence_advances_through_input() {
-        let mut d = Decoder {
-            buf: "Sun, 06",
-            pos: 0,
-        };
+        let mut d = Decoder::new("Sun, 06");
         // weekday(Sun)
         d.expect(b'S').unwrap();
         d.expect(b'u').unwrap();
@@ -172,10 +191,7 @@ mod tests {
 
     #[test]
     fn parsing_date_sequence_with_month_advances_through_input() {
-        let mut d = Decoder {
-            buf: "Sun, 06 Nov 1994",
-            pos: 0,
-        };
+        let mut d = Decoder::new("Sun, 06 Nov 1994");
         // weekday(Sun)
         d.expect(b'S').unwrap();
         d.expect(b'u').unwrap();
