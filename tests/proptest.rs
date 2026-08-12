@@ -1,5 +1,5 @@
 //! Property-based tests mirroring the OCaml port's fuzz suite
-//! (`fuzz/fuzz_http_date.ml`, https://github.com/bikallem/http-date/tree/main/fuzz).
+//! (`fuzz/fuzz_http_date.ml`, <https://github.com/bikallem/http-date/tree/main/fuzz>).
 //!
 //! The properties here match the Alcobar suite there:
 //!
@@ -51,12 +51,8 @@ fn datetime(four_digit_year: bool) -> impl Strategy<Value = DateTime> {
         .prop_map(
             |(dayname, year, month, day, hour, minute, second)| DateTime {
                 dayname,
-                date: Date { year, month, day },
-                time: Time {
-                    hour,
-                    minute,
-                    second,
-                },
+                date: Date::new(year, month, day).expect("generator ranges are valid"),
+                time: Time::new(hour, minute, second).expect("generator ranges are valid"),
             },
         )
 }
@@ -89,22 +85,39 @@ proptest! {
     /// IMF-fixdate round-trip (parity: `IMF round-trip`).
     #[test]
     fn imf_fixdate_round_trips(dt in datetime(true)) {
-        let date = HttpDate::ImfFixdate(dt);
+        let date = HttpDate::imf_fixdate(dt);
         prop_assert_eq!(decode(&encode(&date)), Ok(date));
     }
 
     /// RFC 850 round-trip (parity: `RFC850 round-trip`).
     #[test]
     fn rfc850_round_trips(dt in datetime(false)) {
-        let date = HttpDate::Rfc850(dt);
+        let date = HttpDate::rfc850(dt).unwrap();
         prop_assert_eq!(decode(&encode(&date)), Ok(date));
     }
 
     /// asctime round-trip (parity: `ASCTIME round-trip`).
     #[test]
     fn asctime_round_trips(dt in datetime(true)) {
-        let date = HttpDate::Asctime(dt);
+        let date = HttpDate::asctime(dt);
         prop_assert_eq!(decode(&encode(&date)), Ok(date));
+    }
+}
+
+/// Builds a [`DateTime`] from raw components, panicking if out of range.
+fn dt(
+    dayname: DayName,
+    year: i32,
+    month: i32,
+    day: i32,
+    hour: i32,
+    minute: i32,
+    second: i32,
+) -> DateTime {
+    DateTime {
+        dayname,
+        date: Date::new(year, month, day).expect("valid date"),
+        time: Time::new(hour, minute, second).expect("valid time"),
     }
 }
 
@@ -115,163 +128,43 @@ fn corpus_decodes_and_round_trips() {
     let cases: &[(&str, HttpDate)] = &[
         (
             "Sun, 06 Nov 1994 08:49:37 GMT",
-            HttpDate::ImfFixdate(DateTime {
-                dayname: DayName::Sun,
-                date: Date {
-                    year: 1994,
-                    month: 11,
-                    day: 6,
-                },
-                time: Time {
-                    hour: 8,
-                    minute: 49,
-                    second: 37,
-                },
-            }),
+            HttpDate::imf_fixdate(dt(DayName::Sun, 1994, 11, 6, 8, 49, 37)),
         ),
         (
             "Sunday, 06-Nov-94 08:49:37 GMT",
-            HttpDate::Rfc850(DateTime {
-                dayname: DayName::Sun,
-                date: Date {
-                    year: 94,
-                    month: 11,
-                    day: 6,
-                },
-                time: Time {
-                    hour: 8,
-                    minute: 49,
-                    second: 37,
-                },
-            }),
+            HttpDate::rfc850(dt(DayName::Sun, 94, 11, 6, 8, 49, 37)).unwrap(),
         ),
         (
             "Sun Nov  6 08:49:37 1994",
-            HttpDate::Asctime(DateTime {
-                dayname: DayName::Sun,
-                date: Date {
-                    year: 1994,
-                    month: 11,
-                    day: 6,
-                },
-                time: Time {
-                    hour: 8,
-                    minute: 49,
-                    second: 37,
-                },
-            }),
+            HttpDate::asctime(dt(DayName::Sun, 1994, 11, 6, 8, 49, 37)),
         ),
         (
             "Sun Nov 16 08:49:37 1994",
-            HttpDate::Asctime(DateTime {
-                dayname: DayName::Sun,
-                date: Date {
-                    year: 1994,
-                    month: 11,
-                    day: 16,
-                },
-                time: Time {
-                    hour: 8,
-                    minute: 49,
-                    second: 37,
-                },
-            }),
+            HttpDate::asctime(dt(DayName::Sun, 1994, 11, 16, 8, 49, 37)),
         ),
         (
             "Mon, 01 Jan 2000 00:00:00 GMT",
-            HttpDate::ImfFixdate(DateTime {
-                dayname: DayName::Mon,
-                date: Date {
-                    year: 2000,
-                    month: 1,
-                    day: 1,
-                },
-                time: Time {
-                    hour: 0,
-                    minute: 0,
-                    second: 0,
-                },
-            }),
+            HttpDate::imf_fixdate(dt(DayName::Mon, 2000, 1, 1, 0, 0, 0)),
         ),
         (
             "Saturday, 01-Jan-00 00:00:00 GMT",
-            HttpDate::Rfc850(DateTime {
-                dayname: DayName::Sat,
-                date: Date {
-                    year: 0,
-                    month: 1,
-                    day: 1,
-                },
-                time: Time {
-                    hour: 0,
-                    minute: 0,
-                    second: 0,
-                },
-            }),
+            HttpDate::rfc850(dt(DayName::Sat, 0, 1, 1, 0, 0, 0)).unwrap(),
         ),
         (
             "Fri Dec 31 23:59:59 9999",
-            HttpDate::Asctime(DateTime {
-                dayname: DayName::Fri,
-                date: Date {
-                    year: 9999,
-                    month: 12,
-                    day: 31,
-                },
-                time: Time {
-                    hour: 23,
-                    minute: 59,
-                    second: 59,
-                },
-            }),
+            HttpDate::asctime(dt(DayName::Fri, 9999, 12, 31, 23, 59, 59)),
         ),
         (
             "Tue, 15 Mar 2022 12:30:00 GMT",
-            HttpDate::ImfFixdate(DateTime {
-                dayname: DayName::Tue,
-                date: Date {
-                    year: 2022,
-                    month: 3,
-                    day: 15,
-                },
-                time: Time {
-                    hour: 12,
-                    minute: 30,
-                    second: 0,
-                },
-            }),
+            HttpDate::imf_fixdate(dt(DayName::Tue, 2022, 3, 15, 12, 30, 0)),
         ),
         (
             "Wednesday, 25-Dec-99 18:00:00 GMT",
-            HttpDate::Rfc850(DateTime {
-                dayname: DayName::Wed,
-                date: Date {
-                    year: 99,
-                    month: 12,
-                    day: 25,
-                },
-                time: Time {
-                    hour: 18,
-                    minute: 0,
-                    second: 0,
-                },
-            }),
+            HttpDate::rfc850(dt(DayName::Wed, 99, 12, 25, 18, 0, 0)).unwrap(),
         ),
         (
             "Thu Jan 10 06:15:45 2008",
-            HttpDate::Asctime(DateTime {
-                dayname: DayName::Thu,
-                date: Date {
-                    year: 2008,
-                    month: 1,
-                    day: 10,
-                },
-                time: Time {
-                    hour: 6,
-                    minute: 15,
-                    second: 45,
-                },
-            }),
+            HttpDate::asctime(dt(DayName::Thu, 2008, 1, 10, 6, 15, 45)),
         ),
     ];
 
