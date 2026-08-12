@@ -7,6 +7,8 @@ description = "Parsing and formatting of HTTP date values (RFC 9110)"
 license = "Apache-2.0"
 keywords = ["http", "date", "rfc9110", "rfc7231"]
 categories = ["date-and-time", "web-programming::http"]
+readme = "README.md"
+repository = "https://github.com/bikallem/http-date-rs"
 
 [features]
 default = []
