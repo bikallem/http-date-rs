@@ -7,20 +7,20 @@ default:
 
 # Run the full test suite: unit tests, proptest properties, and doctests.
 test:
-    cargo test --all-targets
+    cargo test --all-targets --all-features
 
 # Run the test suite with cargo-nextest (included in the nix dev shell).
 test-nextest:
-    cargo nextest run --all-targets
+    cargo nextest run --all-targets --all-features
 
 # Type-check the crate (lib, integration tests, and doctests).
 check:
-    cargo check --all-targets
+    cargo check --all-targets --all-features
 
 # Lint with clippy; the crate enables `all` and `pedantic` lints, and this
 # recipe fails on any warning so it is CI-friendly.
 lint:
-    cargo clippy --all-targets -- -D warnings
+    cargo clippy --all-targets --all-features -- -D warnings
 
 # Format the code with rustfmt.
 fmt:
@@ -32,11 +32,11 @@ fmt-check:
 
 # Build the API documentation.
 doc:
-    cargo doc --no-deps
+    cargo doc --no-deps --all-features
 
 # Build and open the API documentation in a browser.
 doc-open:
-    cargo doc --no-deps --open
+    cargo doc --no-deps --all-features --open
 
 # ---------------------------------------------------------------------------
 # Fuzzing with cargo-fuzz.

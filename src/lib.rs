@@ -44,6 +44,8 @@
 //! returned [`HttpDate`].
 
 use std::fmt;
+#[cfg(feature = "chrono")]
+pub mod chrono;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum DayNameTok {
