@@ -128,7 +128,7 @@ impl Decoder<'_> {
         Decoder { buf, pos: 0 }
     }
 
-    #[inline(always)]
+    #[inline]
     fn advance(&mut self, n: usize) {
         self.pos += n;
     }
@@ -155,17 +155,17 @@ impl Decoder<'_> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn space(&mut self) -> Result<(), DecodeError> {
         self.expect(b' ')
     }
 
-    #[inline(always)]
+    #[inline]
     fn comma(&mut self) -> Result<(), DecodeError> {
         self.expect(b',')
     }
 
-    #[inline(always)]
+    #[inline]
     fn colon(&mut self) -> Result<(), DecodeError> {
         self.expect(b':')
     }
@@ -189,7 +189,7 @@ impl Decoder<'_> {
             "Nov" => 11,
             "Dec" => 12,
             _ => {
-                return Err(DecodeError::new(format!("Invalid month value: {}", m)));
+                return Err(DecodeError::new(format!("Invalid month value: {m}")));
             }
         };
         self.advance(3);
@@ -203,7 +203,7 @@ impl Decoder<'_> {
             let pos = self.pos + i;
             match buf.get(pos) {
                 Some(&c @ b'0'..=b'9') => {
-                    value = value * 10 + (c - b'0') as i32;
+                    value = value * 10 + i32::from(c - b'0');
                 }
                 Some(&c) => {
                     return Err(DecodeError::new(format!(
@@ -256,7 +256,7 @@ impl Decoder<'_> {
             "Friday" => DayNameTok::Long(DayName::Fri),
             "Saturday" => DayNameTok::Long(DayName::Sat),
             "Sunday" => DayNameTok::Long(DayName::Sun),
-            _ => return Err(DecodeError::new(format!("Invalid day name: {}", s))),
+            _ => return Err(DecodeError::new(format!("Invalid day name: {s}"))),
         };
         Ok(dayname)
     }
@@ -302,10 +302,7 @@ impl Decoder<'_> {
     fn gmt(&mut self) -> Result<(), DecodeError> {
         let s = self.string();
         if s != "GMT" {
-            return Err(DecodeError::new(format!(
-                "Expected 'GMT', but found '{}'",
-                s
-            )));
+            return Err(DecodeError::new(format!("Expected 'GMT', but found '{s}'")));
         }
         Ok(())
     }
