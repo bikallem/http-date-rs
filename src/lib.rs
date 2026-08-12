@@ -88,6 +88,7 @@ pub struct DateTime {
 ///
 /// The variant indicates which textual format the value was parsed from;
 /// the contained [`DateTime`] holds the decoded components.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum HttpDate {
     /// IMF-fixdate, e.g. `Sun, 06 Nov 1994 08:49:37 GMT`.
     ImfFixdate(DateTime),
@@ -441,6 +442,119 @@ pub fn decode(buf: &str) -> Result<HttpDate, DecodeError> {
             PunctuationTok::Comma => decoder.imf_fixdate(dayname),
             PunctuationTok::Space => decoder.asctime_date(dayname),
         },
+    }
+}
+
+/* ------------------- encoder ------------------- */
+
+impl DayName {
+    /// The three-letter abbreviation used by IMF-fixdate and asctime, e.g. `Mon`.
+    fn short(self) -> &'static str {
+        match self {
+            DayName::Mon => "Mon",
+            DayName::Tue => "Tue",
+            DayName::Wed => "Wed",
+            DayName::Thu => "Thu",
+            DayName::Fri => "Fri",
+            DayName::Sat => "Sat",
+            DayName::Sun => "Sun",
+        }
+    }
+
+    /// The full name used by RFC 850 dates, e.g. `Monday`.
+    fn long(self) -> &'static str {
+        match self {
+            DayName::Mon => "Monday",
+            DayName::Tue => "Tuesday",
+            DayName::Wed => "Wednesday",
+            DayName::Thu => "Thursday",
+            DayName::Fri => "Friday",
+            DayName::Sat => "Saturday",
+            DayName::Sun => "Sunday",
+        }
+    }
+}
+
+/// The three-letter month abbreviation, e.g. `Jan`.
+fn month_name(month: i32) -> &'static str {
+    match month {
+        1 => "Jan",
+        2 => "Feb",
+        3 => "Mar",
+        4 => "Apr",
+        5 => "May",
+        6 => "Jun",
+        7 => "Jul",
+        8 => "Aug",
+        9 => "Sep",
+        10 => "Oct",
+        11 => "Nov",
+        12 => "Dec",
+        _ => unreachable!("month {month} is out of range 1..=12"),
+    }
+}
+
+/// Formats an HTTP date as a string in its original textual format.
+///
+/// The output is guaranteed to parse back with [`decode`] to the same value,
+/// provided the fields are in range (month 1–12, day 1–31, hour 0–23,
+/// minute/second 0–59, and an RFC 850 year of 0–99).
+///
+/// # Examples
+///
+/// ```
+/// use http_date::{decode, encode};
+///
+/// let date = decode("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+/// assert_eq!(encode(&date), "Sun, 06 Nov 1994 08:49:37 GMT");
+/// ```
+pub fn encode(date: &HttpDate) -> String {
+    let dt = match date {
+        HttpDate::ImfFixdate(dt) => dt,
+        HttpDate::Rfc850(dt) => dt,
+        HttpDate::Asctime(dt) => dt,
+    };
+    let month = month_name(dt.date.month);
+    let day = dt.date.day;
+    let year = dt.date.year;
+    let time = dt.time;
+    match date {
+        HttpDate::ImfFixdate(_) => format!(
+            "{}, {:02} {} {:04} {:02}:{:02}:{:02} GMT",
+            dt.dayname.short(),
+            day,
+            month,
+            year,
+            time.hour,
+            time.minute,
+            time.second,
+        ),
+        HttpDate::Rfc850(_) => format!(
+            "{}, {:02}-{}-{:02} {:02}:{:02}:{:02} GMT",
+            dt.dayname.long(),
+            day,
+            month,
+            year,
+            time.hour,
+            time.minute,
+            time.second,
+        ),
+        HttpDate::Asctime(_) => format!(
+            "{} {} {:2} {:02}:{:02}:{:02} {:04}",
+            dt.dayname.short(),
+            month,
+            day,
+            time.hour,
+            time.minute,
+            time.second,
+            year,
+        ),
+    }
+}
+
+impl fmt::Display for HttpDate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&encode(self))
     }
 }
 
