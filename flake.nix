@@ -1,5 +1,5 @@
 {
-  description = "http-date-rs: HTTP date parsing and formatting (RFC 9110)";
+  description = "http-date: HTTP date parsing and formatting (RFC 9110)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -31,7 +31,7 @@
       in
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
-          pname = "http-date-rs";
+          pname = "http-date";
           version = "0.1.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
@@ -49,7 +49,7 @@
           RUST_SRC_PATH = "${toolchain}/lib/rustlib/src/rust/library";
 
           shellHook = ''
-            echo "http-date-rs dev shell: $(rustc --version) (rustfmt, clippy, rust-analyzer, nextest included)"
+            echo "http-date dev shell: $(rustc --version) (rustfmt, clippy, rust-analyzer, nextest included)"
           '';
         };
       }
