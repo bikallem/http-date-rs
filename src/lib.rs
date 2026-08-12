@@ -1,8 +1,19 @@
 //! Parsing and formatting of HTTP date values as defined in
 //! [RFC 9110 § 5.6.7](https://www.rfc-editor.org/rfc/rfc9110#section-5.6.7).
 //!
-//! An HTTP date is an IMF-fixdate, e.g. `Sun, 06 Nov 1994 08:49:37 GMT`.
-//! The public API will be added here.
+//! An HTTP date can appear in one of three formats — IMF-fixdate, RFC 850, or
+//! asctime. Use [`Decoder::decode`] to parse a value into a [`HttpDate`]:
+//!
+//! ```
+//! use http_date_rs::{Decoder, HttpDate};
+//!
+//! let date = Decoder::decode("Sun, 06 Nov 1994 08:49:37 GMT")
+//!     .expect("valid IMF-fixdate");
+//! assert!(matches!(date, HttpDate::ImfFixdate(_)));
+//! ```
+//!
+//! The decoded components are available on the [`DateTime`] inside the
+//! returned [`HttpDate`].
 
 use std::fmt;
 
@@ -12,14 +23,22 @@ enum DayNameTok {
     Long(DayName),
 }
 
+/// The day of the week as used in HTTP date values.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DayName {
+    /// Monday.
     Mon,
+    /// Tuesday.
     Tue,
+    /// Wednesday.
     Wed,
+    /// Thursday.
     Thu,
+    /// Friday.
     Fri,
+    /// Saturday.
     Sat,
+    /// Sunday.
     Sun,
 }
 
@@ -29,32 +48,62 @@ enum PunctuationTok {
     Space,
 }
 
+/// The calendar date portion of an HTTP date.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Date {
+    /// The year, e.g. `1994`.
     pub year: i32,
+    /// The month, 1–12, where 1 is January.
     pub month: i32,
+    /// The day of the month, 1–31.
     pub day: i32,
 }
 
+/// The time-of-day portion of an HTTP date.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Time {
+    /// The hour, 0–23.
     pub hour: i32,
+    /// The minute, 0–59.
     pub minute: i32,
+    /// The second, 0–59.
     pub second: i32,
 }
 
+/// A fully decoded HTTP date: weekday, calendar date, and time of day.
+///
+/// This is the value carried by the [`HttpDate`] variants.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct DateTime {
+    /// The day of the week.
     pub dayname: DayName,
+    /// The calendar date.
     pub date: Date,
+    /// The time of day.
     pub time: Time,
 }
 
+/// An HTTP date in one of the three formats defined in
+/// [RFC 9110 § 5.6.7](https://www.rfc-editor.org/rfc/rfc9110#section-5.6.7).
+///
+/// The variant indicates which textual format the value was parsed from;
+/// the contained [`DateTime`] holds the decoded components.
+pub enum HttpDate {
+    /// IMF-fixdate, e.g. `Sun, 06 Nov 1994 08:49:37 GMT`.
+    ImfFixdate(DateTime),
+    /// RFC 850 date, e.g. `Sunday, 06-Nov-94 08:49:37 GMT`.
+    Rfc850(DateTime),
+    /// asctime date, e.g. `Sun Nov  6 08:49:37 1994`.
+    Asctime(DateTime),
+}
+
 /* ------------------- decoder ------------------- */
+/// An error returned when an HTTP date cannot be parsed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodeError(String);
 
 impl DecodeError {
+    /// Constructs a new decode error with the given message.
     pub fn new(msg: impl Into<String>) -> Self {
         Self(msg.into())
     }
@@ -68,7 +117,11 @@ impl fmt::Display for DecodeError {
 
 impl std::error::Error for DecodeError {}
 
-struct Decoder<'a> {
+/// A streaming parser for HTTP date values.
+///
+/// The only public entry point is [`Decoder::decode`]; all other methods are
+/// internal parsing helpers.
+pub struct Decoder<'a> {
     buf: &'a str,
     pos: usize,
 }
@@ -258,6 +311,142 @@ impl Decoder<'_> {
             )));
         }
         Ok(())
+    }
+
+    // IMF-fixdate: day-name "," SP date1 SP time SP "GMT"
+    fn imf_fixdate(&mut self, dayname: DayName) -> Result<HttpDate, DecodeError> {
+        self.space()?;
+        let date = self.date1()?;
+        self.space()?;
+        let time = self.time()?;
+        self.space()?;
+        self.gmt()?;
+        Ok(HttpDate::ImfFixdate(DateTime {
+            dayname,
+            date,
+            time,
+        }))
+    }
+
+    fn date2(&mut self) -> Result<Date, DecodeError> {
+        let day = self.day()?;
+        self.expect(b'-')?;
+        let month = self.month()?;
+        self.expect(b'-')?;
+        let year = self.digits(2)?;
+        Ok(Date { year, month, day })
+    }
+
+    // RFC 850 date: day-name "," SP date2 SP time SP "GMT"
+    fn rfc850_date(&mut self, dayname: DayName) -> Result<HttpDate, DecodeError> {
+        self.comma()?;
+        self.space()?;
+        let date = self.date2()?;
+        self.space()?;
+        let time = self.time()?;
+        self.space()?;
+        self.gmt()?;
+        Ok(HttpDate::Rfc850(DateTime {
+            dayname,
+            date,
+            time,
+        }))
+    }
+
+    fn date3(&mut self) -> Result<(i32, i32), DecodeError> {
+        // month
+        let m = self.month()?;
+        self.space()?;
+        // day
+        let d = match self.byte_at(self.pos)? {
+            b' ' => {
+                self.space()?;
+                self.digits(1)?
+            }
+            _ => self.digits(2)?,
+        };
+        Ok((m, d))
+    }
+
+    // asctime date: day-name SP month SP (2DIGIT / (SP 1DIGIT)) SP time SP 4DIGIT
+    fn asctime_date(&mut self, dayname: DayName) -> Result<HttpDate, DecodeError> {
+        let (month, day) = self.date3()?;
+        self.space()?;
+        let time = self.time()?;
+        self.space()?;
+        let year = self.year()?;
+        Ok(HttpDate::Asctime(DateTime {
+            dayname,
+            date: Date { year, month, day },
+            time,
+        }))
+    }
+
+    /// Parses an HTTP date from its textual representation.
+    ///
+    /// Accepts any of the three date formats defined in
+    /// [RFC 9110 § 5.6.7](https://www.rfc-editor.org/rfc/rfc9110#section-5.6.7):
+    ///
+    /// | Format      | Example                          |
+    /// |-------------|----------------------------------|
+    /// | IMF-fixdate | `Sun, 06 Nov 1994 08:49:37 GMT`  |
+    /// | RFC 850     | `Sunday, 06-Nov-94 08:49:37 GMT` |
+    /// | asctime     | `Sun Nov  6 08:49:37 1994`       |
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DecodeError`] if `buf` is not a well-formed HTTP date, for
+    /// example when the day name or month is unknown, a required separator is
+    /// missing, or the input is truncated.
+    ///
+    /// # Examples
+    ///
+    /// An IMF-fixdate (the format HTTP servers must emit):
+    ///
+    /// ```
+    /// use http_date_rs::{Decoder, HttpDate};
+    ///
+    /// let date = Decoder::decode("Sun, 06 Nov 1994 08:49:37 GMT")
+    ///     .expect("valid IMF-fixdate");
+    /// assert!(matches!(date, HttpDate::ImfFixdate(_)));
+    /// ```
+    ///
+    /// An RFC 850 date:
+    ///
+    /// ```
+    /// use http_date_rs::{Decoder, HttpDate};
+    ///
+    /// let date = Decoder::decode("Sunday, 06-Nov-94 08:49:37 GMT")
+    ///     .expect("valid RFC 850 date");
+    /// assert!(matches!(date, HttpDate::Rfc850(_)));
+    /// ```
+    ///
+    /// An asctime date:
+    ///
+    /// ```
+    /// use http_date_rs::{Decoder, HttpDate};
+    ///
+    /// let date = Decoder::decode("Sun Nov  6 08:49:37 1994")
+    ///     .expect("valid asctime date");
+    /// assert!(matches!(date, HttpDate::Asctime(_)));
+    /// ```
+    ///
+    /// Malformed input is rejected:
+    ///
+    /// ```
+    /// use http_date_rs::Decoder;
+    ///
+    /// assert!(Decoder::decode("not a date").is_err());
+    /// ```
+    pub fn decode(buf: &str) -> Result<HttpDate, DecodeError> {
+        let mut decoder = Decoder::new(buf);
+        match decoder.dayname_tok()? {
+            DayNameTok::Long(dayname) => decoder.rfc850_date(dayname),
+            DayNameTok::Short(dayname) => match decoder.punctuation_tok()? {
+                PunctuationTok::Comma => decoder.imf_fixdate(dayname),
+                PunctuationTok::Space => decoder.asctime_date(dayname),
+            },
+        }
     }
 }
 
@@ -548,5 +737,153 @@ mod tests {
         let mut d = Decoder::new("08:49:3");
         let err = d.time().unwrap_err();
         assert_eq!(err.to_string(), "DecodeError: Unexpected end of input");
+    }
+
+    // Test cases for decode
+
+    fn expect_imf_fixdate(decoded: &HttpDate) -> DateTime {
+        match decoded {
+            HttpDate::ImfFixdate(dt) => *dt,
+            _ => panic!("expected ImfFixdate"),
+        }
+    }
+
+    fn expect_rfc850(decoded: &HttpDate) -> DateTime {
+        match decoded {
+            HttpDate::Rfc850(dt) => *dt,
+            _ => panic!("expected Rfc850"),
+        }
+    }
+
+    fn expect_asctime(decoded: &HttpDate) -> DateTime {
+        match decoded {
+            HttpDate::Asctime(dt) => *dt,
+            _ => panic!("expected Asctime"),
+        }
+    }
+
+    #[test]
+    fn decode_parses_imf_fixdate() {
+        let dt = expect_imf_fixdate(&Decoder::decode("Sun, 06 Nov 1994 08:49:37 GMT").unwrap());
+        assert_eq!(dt.dayname, DayName::Sun);
+        assert_eq!(
+            dt.date,
+            Date {
+                year: 1994,
+                month: 11,
+                day: 6
+            }
+        );
+        assert_eq!(
+            dt.time,
+            Time {
+                hour: 8,
+                minute: 49,
+                second: 37
+            }
+        );
+    }
+
+    #[test]
+    fn decode_parses_rfc850_date() {
+        let dt = expect_rfc850(&Decoder::decode("Sunday, 06-Nov-94 08:49:37 GMT").unwrap());
+        assert_eq!(dt.dayname, DayName::Sun);
+        assert_eq!(
+            dt.date,
+            Date {
+                year: 94,
+                month: 11,
+                day: 6
+            }
+        );
+        assert_eq!(
+            dt.time,
+            Time {
+                hour: 8,
+                minute: 49,
+                second: 37
+            }
+        );
+    }
+
+    #[test]
+    fn decode_parses_asctime() {
+        let dt = expect_asctime(&Decoder::decode("Sun Nov  6 08:49:37 1994").unwrap());
+        assert_eq!(dt.dayname, DayName::Sun);
+        assert_eq!(
+            dt.date,
+            Date {
+                year: 1994,
+                month: 11,
+                day: 6
+            }
+        );
+        assert_eq!(
+            dt.time,
+            Time {
+                hour: 8,
+                minute: 49,
+                second: 37
+            }
+        );
+    }
+
+    #[test]
+    fn decode_parses_all_imf_fixdate_weekdays() {
+        let cases = [
+            ("Mon", DayName::Mon),
+            ("Tue", DayName::Tue),
+            ("Wed", DayName::Wed),
+            ("Thu", DayName::Thu),
+            ("Fri", DayName::Fri),
+            ("Sat", DayName::Sat),
+            ("Sun", DayName::Sun),
+        ];
+        for (name, dayname) in cases {
+            let input = format!("{name}, 06 Nov 1994 08:49:37 GMT");
+            let dt = expect_imf_fixdate(&Decoder::decode(&input).unwrap());
+            assert_eq!(dt.dayname, dayname, "weekday {name}");
+        }
+    }
+
+    #[test]
+    fn decode_rejects_invalid_dayname() {
+        let err = Decoder::decode("Funday, 06 Nov 1994 08:49:37 GMT")
+            .err()
+            .expect("expected decode to fail");
+        assert!(err.to_string().contains("Invalid day name: Funday"));
+    }
+
+    #[test]
+    fn decode_rejects_missing_punctuation() {
+        // "Sun 06 Nov..." is neither ", " (IMF) nor " " after a short name
+        // followed by a valid asctime; "Sun 06" fails because a month is
+        // expected next.
+        let err = Decoder::decode("Sun 06 Nov 1994")
+            .err()
+            .expect("expected decode to fail");
+        assert!(err.to_string().contains("Invalid month value: 06"));
+    }
+
+    #[test]
+    fn decode_rejects_imf_fixdate_missing_gmt() {
+        let err = Decoder::decode("Sun, 06 Nov 1994 08:49:37 ")
+            .err()
+            .expect("expected decode to fail");
+        assert!(err.to_string().contains("Expected 'GMT', but found ''"));
+    }
+
+    #[test]
+    fn decode_rejects_truncated_input() {
+        let err = Decoder::decode("Sun, 06 Nov")
+            .err()
+            .expect("expected decode to fail");
+        assert_eq!(err.to_string(), "DecodeError: Unexpected end of input");
+    }
+
+    #[test]
+    fn decode_rejects_empty_input() {
+        let err = Decoder::decode("").err().expect("expected decode to fail");
+        assert_eq!(err.to_string(), "DecodeError: Invalid day name: ");
     }
 }
