@@ -393,7 +393,7 @@ impl Decoder<'_> {
 ///
 /// Returns a [`DecodeError`] if `buf` is not a well-formed HTTP date, for
 /// example when the day name or month is unknown, a required separator is
-/// missing, or the input is truncated.
+/// missing, the input is truncated, or there is trailing data after the date.
 ///
 /// # Examples
 ///
@@ -436,13 +436,22 @@ impl Decoder<'_> {
 /// ```
 pub fn decode(buf: &str) -> Result<HttpDate, DecodeError> {
     let mut decoder = Decoder::new(buf);
-    match decoder.dayname_tok()? {
+    let date = match decoder.dayname_tok()? {
         DayNameTok::Long(dayname) => decoder.rfc850_date(dayname),
         DayNameTok::Short(dayname) => match decoder.punctuation_tok()? {
             PunctuationTok::Comma => decoder.imf_fixdate(dayname),
             PunctuationTok::Space => decoder.asctime_date(dayname),
         },
+    }?;
+    // The RFC 9110 `HTTP-date` grammar spans the whole field value, so any
+    // leftover input means `buf` is not a well-formed HTTP date.
+    if decoder.pos != decoder.buf.len() {
+        return Err(DecodeError::new(format!(
+            "Trailing data after HTTP date at position {}",
+            decoder.pos
+        )));
     }
+    Ok(date)
 }
 
 /* ------------------- encoder ------------------- */
@@ -993,5 +1002,24 @@ mod tests {
     fn decode_rejects_empty_input() {
         let err = decode("").err().expect("expected decode to fail");
         assert_eq!(err.to_string(), "DecodeError: Invalid day name: ");
+    }
+
+    #[test]
+    fn decode_rejects_trailing_data() {
+        for input in [
+            "Sun, 06 Nov 1994 08:49:37 GMT ",
+            "Sun, 06 Nov 1994 08:49:37 GMT 123",
+            "Sun, 06 Nov 1994 08:49:37 GMT.",
+            "Sunday, 06-Nov-94 08:49:37 GMT extra",
+            "Sun Nov  6 08:49:37 1994!",
+        ] {
+            let err = decode(input)
+                .err()
+                .unwrap_or_else(|| panic!("expected {input:?} to be rejected"));
+            assert!(
+                err.to_string().contains("Trailing data"),
+                "{input:?} failed for a different reason: {err}"
+            );
+        }
     }
 }
