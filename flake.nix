@@ -51,6 +51,7 @@
           packages = [
             toolchain
             pkgs.cargo-nextest
+            pkgs.just
           ];
 
           # rust-analyzer needs the stdlib sources from the rust-src component.
