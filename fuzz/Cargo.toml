@@ -9,9 +9,11 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+chrono = "0.4"
 
 [dependencies.http-date]
 path = ".."
+features = ["chrono"]
 
 [[bin]]
 name = "decode"
@@ -23,6 +25,13 @@ bench = false
 [[bin]]
 name = "roundtrip"
 path = "fuzz_targets/roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "chrono_roundtrip"
+path = "fuzz_targets/chrono_roundtrip.rs"
 test = false
 doc = false
 bench = false
