@@ -316,6 +316,9 @@ fn malformed_inputs_are_rejected() {
         "not a date",
         "Sun Nov  6 08:49:37",
         "Sunday, 06-Nov-94",
+        "Sun, 32 Nov 1994 08:49:37 GMT",
+        "Sun, 06 Nov 1994 24:00:00 GMT",
+        "Sun, 06 Nov 1994 08:60:00 GMT",
     ];
     for input in cases {
         assert!(decode(input).is_err(), "expected {input:?} to be rejected");

@@ -378,6 +378,37 @@ impl Decoder<'_> {
     }
 }
 
+fn validate_date(date: &HttpDate) -> Result<(), DecodeError> {
+    let dt = match date {
+        HttpDate::ImfFixdate(dt) | HttpDate::Rfc850(dt) | HttpDate::Asctime(dt) => dt,
+    };
+    let day = dt.date.day;
+    if !(1..=31).contains(&day) {
+        return Err(DecodeError::new(format!(
+            "Day {day} is out of range 1..=31"
+        )));
+    }
+    let hour = dt.time.hour;
+    if hour > 23 {
+        return Err(DecodeError::new(format!(
+            "Hour {hour} is out of range 0..=23"
+        )));
+    }
+    let minute = dt.time.minute;
+    if minute > 59 {
+        return Err(DecodeError::new(format!(
+            "Minute {minute} is out of range 0..=59"
+        )));
+    }
+    let second = dt.time.second;
+    if second > 59 {
+        return Err(DecodeError::new(format!(
+            "Second {second} is out of range 0..=59"
+        )));
+    }
+    Ok(())
+}
+
 /// Parses an HTTP date from its textual representation.
 ///
 /// Accepts any of the three date formats defined in
@@ -393,7 +424,8 @@ impl Decoder<'_> {
 ///
 /// Returns a [`DecodeError`] if `buf` is not a well-formed HTTP date, for
 /// example when the day name or month is unknown, a required separator is
-/// missing, the input is truncated, or there is trailing data after the date.
+/// missing, the input is truncated, there is trailing data after the date,
+/// or a component is out of range (day 1–31, hour 0–23, minute/second 0–59).
 ///
 /// # Examples
 ///
@@ -451,6 +483,7 @@ pub fn decode(buf: &str) -> Result<HttpDate, DecodeError> {
             decoder.pos
         )));
     }
+    validate_date(&date)?;
     Ok(date)
 }
 
@@ -517,11 +550,10 @@ fn month_name(month: i32) -> &'static str {
 /// let date = decode("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
 /// assert_eq!(encode(&date), "Sun, 06 Nov 1994 08:49:37 GMT");
 /// ```
+#[must_use]
 pub fn encode(date: &HttpDate) -> String {
     let dt = match date {
-        HttpDate::ImfFixdate(dt) => dt,
-        HttpDate::Rfc850(dt) => dt,
-        HttpDate::Asctime(dt) => dt,
+        HttpDate::ImfFixdate(dt) | HttpDate::Rfc850(dt) | HttpDate::Asctime(dt) => dt,
     };
     let month = month_name(dt.date.month);
     let day = dt.date.day;
@@ -1021,5 +1053,33 @@ mod tests {
                 "{input:?} failed for a different reason: {err}"
             );
         }
+    }
+
+    #[test]
+    fn decode_rejects_out_of_range_components() {
+        for input in [
+            "Sun, 00 Nov 1994 08:49:37 GMT",
+            "Sun, 32 Nov 1994 08:49:37 GMT",
+            "Sunday, 32-Nov-94 08:49:37 GMT",
+            "Sun Nov 32 08:49:37 1994",
+            "Sun Nov  0 08:49:37 1994", // asctime single-digit day 0
+            "Sun, 06 Nov 1994 24:49:37 GMT",
+            "Sun, 06 Nov 1994 08:60:37 GMT",
+            "Sun, 06 Nov 1994 08:49:60 GMT",
+        ] {
+            let err = decode(input)
+                .err()
+                .unwrap_or_else(|| panic!("expected {input:?} to be rejected"));
+            assert!(
+                err.to_string().contains("out of range"),
+                "{input:?} failed for a different reason: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn decode_accepts_boundary_components() {
+        assert!(decode("Sun, 31 Nov 1994 08:49:37 GMT").is_ok());
+        assert!(decode("Sun, 06 Nov 1994 23:59:59 GMT").is_ok());
     }
 }
