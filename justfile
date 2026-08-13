@@ -5,12 +5,8 @@
 default:
     @just --list
 
-# Run the full test suite: unit tests, proptest properties, and doctests.
-test:
-    cargo test --all-targets --all-features
-
 # Run the test suite with cargo-nextest (included in the nix dev shell).
-test-nextest:
+test:
     cargo nextest run --all-targets --all-features
 
 # Type-check the crate (lib, integration tests, and doctests).
