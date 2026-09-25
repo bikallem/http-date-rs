@@ -288,8 +288,8 @@ struct Decoder<'a> {
     pos: usize,
 }
 
-impl Decoder<'_> {
-    fn new(buf: &str) -> Decoder<'_> {
+impl<'a> Decoder<'a> {
+    fn new(buf: &'a str) -> Self {
         Decoder { buf, pos: 0 }
     }
 
@@ -391,22 +391,19 @@ impl Decoder<'_> {
         self.digits(2)
     }
 
-    fn string(&mut self) -> String {
-        let mut out = String::with_capacity(5);
-        while self.pos < self.buf.len() {
-            let c = self.buf.as_bytes()[self.pos];
-            if !c.is_ascii_alphabetic() {
-                break;
-            }
-            out.push(c as char);
+    /// Consumes a run of ASCII letters and returns it as a slice of the input.
+    fn string(&mut self) -> &'a str {
+        let start = self.pos;
+        while self.pos < self.buf.len() && self.buf.as_bytes()[self.pos].is_ascii_alphabetic() {
             self.advance(1);
         }
-        out
+        // Only ASCII bytes are ever consumed, so both ends are char boundaries.
+        &self.buf[start..self.pos]
     }
 
     fn dayname_tok(&mut self) -> Result<DayNameTok, DecodeError> {
         let s = self.string();
-        let dayname = match s.as_str() {
+        let dayname = match s {
             "Mon" => DayNameTok::Short(DayName::Mon),
             "Tue" => DayNameTok::Short(DayName::Tue),
             "Wed" => DayNameTok::Short(DayName::Wed),
