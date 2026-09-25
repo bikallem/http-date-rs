@@ -680,50 +680,54 @@ fn month_name(month: i32) -> &'static str {
 /// ```
 #[must_use]
 pub fn encode(date: &HttpDate) -> String {
-    let dt = date.datetime();
-    let month = month_name(dt.date.month());
-    let day = dt.date.day();
-    let year = dt.date.year();
-    let time = dt.time;
-    match date.format {
-        Format::ImfFixdate => format!(
-            "{}, {:02} {} {:04} {:02}:{:02}:{:02} GMT",
-            dt.dayname.short(),
-            day,
-            month,
-            year,
-            time.hour(),
-            time.minute(),
-            time.second(),
-        ),
-        // `format` is private, so `Format::Rfc850` implies year <= 99 by
-        // construction (`HttpDate::rfc850`).
-        Format::Rfc850 => format!(
-            "{}, {:02}-{}-{:02} {:02}:{:02}:{:02} GMT",
-            dt.dayname.long(),
-            day,
-            month,
-            year,
-            time.hour(),
-            time.minute(),
-            time.second(),
-        ),
-        Format::Asctime => format!(
-            "{} {} {:2} {:02}:{:02}:{:02} {:04}",
-            dt.dayname.short(),
-            month,
-            day,
-            time.hour(),
-            time.minute(),
-            time.second(),
-            year,
-        ),
-    }
+    date.to_string()
 }
 
 impl fmt::Display for HttpDate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&encode(self))
+        let dt = &self.dt;
+        let month = month_name(dt.date.month());
+        let day = dt.date.day();
+        let year = dt.date.year();
+        let time = dt.time;
+
+        match self.format {
+            Format::ImfFixdate => write!(
+                f,
+                "{}, {:02} {} {:04} {:02}:{:02}:{:02} GMT",
+                dt.dayname.short(),
+                day,
+                month,
+                year,
+                time.hour(),
+                time.minute(),
+                time.second(),
+            ),
+            // `format` is private, so `Format::Rfc850` implies year <= 99 by
+            // construction (`HttpDate::rfc850`).
+            Format::Rfc850 => write!(
+                f,
+                "{}, {:02}-{}-{:02} {:02}:{:02}:{:02} GMT",
+                dt.dayname.long(),
+                day,
+                month,
+                year,
+                time.hour(),
+                time.minute(),
+                time.second(),
+            ),
+            Format::Asctime => write!(
+                f,
+                "{} {} {:2} {:02}:{:02}:{:02} {:04}",
+                dt.dayname.short(),
+                month,
+                day,
+                time.hour(),
+                time.minute(),
+                time.second(),
+                year,
+            ),
+        }
     }
 }
 
