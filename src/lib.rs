@@ -72,6 +72,21 @@ pub enum DayName {
     Sun,
 }
 
+const DAYS: [DayName; 7] = [
+    DayName::Mon,
+    DayName::Tue,
+    DayName::Wed,
+    DayName::Thu,
+    DayName::Fri,
+    DayName::Sat,
+    DayName::Sun,
+];
+
+/// Three-letter month names, January first.
+const MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum PunctuationTok {
     Comma,
@@ -358,23 +373,10 @@ impl<'a> Decoder<'a> {
             .buf
             .get(self.pos..self.pos + 3)
             .ok_or_else(|| DecodeError::new("Unexpected end of input").at(self.pos))?;
-        let n = match m {
-            "Jan" => 1,
-            "Feb" => 2,
-            "Mar" => 3,
-            "Apr" => 4,
-            "May" => 5,
-            "Jun" => 6,
-            "Jul" => 7,
-            "Aug" => 8,
-            "Sep" => 9,
-            "Oct" => 10,
-            "Nov" => 11,
-            "Dec" => 12,
-            _ => {
-                return Err(DecodeError::new("Invalid month value").at(self.pos));
-            }
-        };
+        let n = (1..)
+            .zip(MONTHS)
+            .find_map(|(n, name)| (name == m).then_some(n))
+            .ok_or_else(|| DecodeError::new("Invalid month value").at(self.pos))?;
         self.advance(3);
         Ok(n)
     }
@@ -417,24 +419,15 @@ impl<'a> Decoder<'a> {
     fn dayname_tok(&mut self) -> Result<DayNameTok, DecodeError> {
         let start = self.pos;
         let s = self.string();
-        let dayname = match s {
-            "Mon" => DayNameTok::Short(DayName::Mon),
-            "Tue" => DayNameTok::Short(DayName::Tue),
-            "Wed" => DayNameTok::Short(DayName::Wed),
-            "Thu" => DayNameTok::Short(DayName::Thu),
-            "Fri" => DayNameTok::Short(DayName::Fri),
-            "Sat" => DayNameTok::Short(DayName::Sat),
-            "Sun" => DayNameTok::Short(DayName::Sun),
-            "Monday" => DayNameTok::Long(DayName::Mon),
-            "Tuesday" => DayNameTok::Long(DayName::Tue),
-            "Wednesday" => DayNameTok::Long(DayName::Wed),
-            "Thursday" => DayNameTok::Long(DayName::Thu),
-            "Friday" => DayNameTok::Long(DayName::Fri),
-            "Saturday" => DayNameTok::Long(DayName::Sat),
-            "Sunday" => DayNameTok::Long(DayName::Sun),
-            _ => return Err(DecodeError::new("Invalid day name").at(start)),
-        };
-        Ok(dayname)
+        for d in DAYS {
+            if s == d.short() {
+                return Ok(DayNameTok::Short(d));
+            }
+            if s == d.long() {
+                return Ok(DayNameTok::Long(d));
+            }
+        }
+        Err(DecodeError::new("Invalid day name").at(start))
     }
 
     fn punctuation_tok(&mut self) -> Result<PunctuationTok, DecodeError> {
@@ -656,21 +649,7 @@ impl DayName {
 
 /// The three-letter month abbreviation, e.g. `Jan`.
 fn month_name(month: i32) -> &'static str {
-    match month {
-        1 => "Jan",
-        2 => "Feb",
-        3 => "Mar",
-        4 => "Apr",
-        5 => "May",
-        6 => "Jun",
-        7 => "Jul",
-        8 => "Aug",
-        9 => "Sep",
-        10 => "Oct",
-        11 => "Nov",
-        12 => "Dec",
-        _ => unreachable!("month {month} is out of range 1..=12"),
-    }
+    MONTHS[usize::try_from(month - 1).expect("month is 1..=12")]
 }
 
 /// Formats an HTTP date as a string in its original textual format.
