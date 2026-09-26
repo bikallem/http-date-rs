@@ -371,11 +371,12 @@ impl<'a> Decoder<'a> {
     fn month(&mut self) -> Result<u8, Error> {
         let m = self
             .buf
+            .as_bytes()
             .get(self.pos..self.pos + 3)
             .ok_or_else(|| Error::new("unexpected end of input").at(self.pos))?;
         let n = (1..)
             .zip(MONTHS)
-            .find_map(|(n, name)| (name == m).then_some(n))
+            .find_map(|(n, name)| (name.as_bytes() == m).then_some(n))
             .ok_or_else(|| Error::new("invalid month value").at(self.pos))?;
         self.advance(3);
         Ok(n)
