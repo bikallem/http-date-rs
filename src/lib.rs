@@ -17,7 +17,7 @@
 //! ```
 //! use http_date::{Date, DateTime, DayName, HttpDate, Time, encode};
 //!
-//! fn datetime(year: i32) -> DateTime {
+//! fn datetime(year: u16) -> DateTime {
 //!     DateTime {
 //!         dayname: DayName::Sun,
 //!         date: Date::new(year, 11, 6).expect("valid date"),
@@ -97,11 +97,11 @@ enum PunctuationTok {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Date {
     /// The year, e.g. `1994`.
-    year: i32,
+    year: u16,
     /// The month, 1–12, where 1 is January.
-    month: i32,
+    month: u8,
     /// The day of the month, 1–31.
-    day: i32,
+    day: u8,
 }
 
 impl Date {
@@ -111,25 +111,25 @@ impl Date {
     ///
     /// Returns a [`DecodeError`] if a component is out of range: year 0–9999,
     /// month 1–12, day 1–31.
-    pub fn new(year: i32, month: i32, day: i32) -> Result<Self, DecodeError> {
-        if !(0..=9999).contains(&year) || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+    pub fn new(year: u16, month: u8, day: u8) -> Result<Self, DecodeError> {
+        if year > 9999 || month == 0 || month > 12 || day == 0 || day > 31 {
             return Err(DecodeError::new("Date out of range"));
         }
         Ok(Self { year, month, day })
     }
 
     #[must_use]
-    pub fn year(&self) -> i32 {
+    pub fn year(&self) -> u16 {
         self.year
     }
 
     #[must_use]
-    pub fn month(&self) -> i32 {
+    pub fn month(&self) -> u8 {
         self.month
     }
 
     #[must_use]
-    pub fn day(&self) -> i32 {
+    pub fn day(&self) -> u8 {
         self.day
     }
 }
@@ -141,11 +141,11 @@ impl Date {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Time {
     /// The hour, 0–23.
-    hour: i32,
+    hour: u8,
     /// The minute, 0–59.
-    minute: i32,
+    minute: u8,
     /// The second, 0–59.
-    second: i32,
+    second: u8,
 }
 
 impl Time {
@@ -155,8 +155,8 @@ impl Time {
     ///
     /// Returns a [`DecodeError`] if a component is out of range: hour 0–23,
     /// minute 0–59, second 0–59.
-    pub fn new(hour: i32, minute: i32, second: i32) -> Result<Self, DecodeError> {
-        if !(0..=23).contains(&hour) || !(0..=59).contains(&minute) || !(0..=59).contains(&second) {
+    pub fn new(hour: u8, minute: u8, second: u8) -> Result<Self, DecodeError> {
+        if hour > 23 || minute > 59 || second > 59 {
             return Err(DecodeError::new("Time out of range"));
         }
         Ok(Self {
@@ -167,17 +167,17 @@ impl Time {
     }
 
     #[must_use]
-    pub fn hour(&self) -> i32 {
+    pub fn hour(&self) -> u8 {
         self.hour
     }
 
     #[must_use]
-    pub fn minute(&self) -> i32 {
+    pub fn minute(&self) -> u8 {
         self.minute
     }
 
     #[must_use]
-    pub fn second(&self) -> i32 {
+    pub fn second(&self) -> u8 {
         self.second
     }
 }
@@ -237,7 +237,7 @@ impl HttpDate {
     /// Returns a [`DecodeError`] if the year is outside 0–99, which cannot be
     /// represented in RFC 850's two-digit-year format.
     pub fn rfc850(dt: DateTime) -> Result<Self, DecodeError> {
-        if !(0..=99).contains(&dt.date.year) {
+        if dt.date.year > 99 {
             return Err(DecodeError::new("RFC 850 year out of range (0-99)"));
         }
         Ok(Self {
@@ -368,7 +368,7 @@ impl<'a> Decoder<'a> {
         self.expect(b':')
     }
 
-    fn month(&mut self) -> Result<i32, DecodeError> {
+    fn month(&mut self) -> Result<u8, DecodeError> {
         let m = self
             .buf
             .get(self.pos..self.pos + 3)
@@ -381,14 +381,14 @@ impl<'a> Decoder<'a> {
         Ok(n)
     }
 
-    fn digits(&mut self, n: usize) -> Result<i32, DecodeError> {
+    fn digits(&mut self, n: usize) -> Result<u16, DecodeError> {
         let buf = self.buf.as_bytes();
-        let mut value: i32 = 0;
+        let mut value: u16 = 0;
         for i in 0..n {
             let pos = self.pos + i;
             match buf.get(pos) {
                 Some(&c @ b'0'..=b'9') => {
-                    value = value * 10 + i32::from(c - b'0');
+                    value = value * 10 + u16::from(c - b'0');
                 }
                 Some(_) => return Err(DecodeError::new("Expected digit").at(pos)),
                 None => return Err(DecodeError::new("Unexpected end of input").at(pos)),
@@ -398,12 +398,18 @@ impl<'a> Decoder<'a> {
         Ok(value)
     }
 
-    fn year(&mut self) -> Result<i32, DecodeError> {
+    fn year(&mut self) -> Result<u16, DecodeError> {
         self.digits(4)
     }
 
-    fn day(&mut self) -> Result<i32, DecodeError> {
-        self.digits(2)
+    fn day(&mut self) -> Result<u8, DecodeError> {
+        self.digits_u8(2)
+    }
+
+    /// Reads a one- or two-digit field, which always fits in a `u8`.
+    fn digits_u8(&mut self, n: usize) -> Result<u8, DecodeError> {
+        let value = self.digits(n)?;
+        Ok(u8::try_from(value).expect("at most two digits"))
     }
 
     /// Consumes a run of ASCII letters and returns it as a slice of the input.
@@ -453,11 +459,11 @@ impl<'a> Decoder<'a> {
 
     fn time(&mut self) -> Result<Time, DecodeError> {
         let start = self.pos;
-        let hour = self.digits(2)?;
+        let hour = self.digits_u8(2)?;
         self.colon()?;
-        let minute = self.digits(2)?;
+        let minute = self.digits_u8(2)?;
         self.colon()?;
-        let second = self.digits(2)?;
+        let second = self.digits_u8(2)?;
         Time::new(hour, minute, second).map_err(|e| e.at(start))
     }
 
@@ -511,7 +517,7 @@ impl<'a> Decoder<'a> {
         HttpDate::rfc850(date).map_err(|e| e.at(self.pos))
     }
 
-    fn date3(&mut self) -> Result<(i32, i32), DecodeError> {
+    fn date3(&mut self) -> Result<(u8, u8), DecodeError> {
         // month
         let m = self.month()?;
         self.space()?;
@@ -519,9 +525,9 @@ impl<'a> Decoder<'a> {
         let d = match self.byte_at(self.pos)? {
             b' ' => {
                 self.space()?;
-                self.digits(1)?
+                self.digits_u8(1)?
             }
-            _ => self.digits(2)?,
+            _ => self.digits_u8(2)?,
         };
         Ok((m, d))
     }
@@ -648,8 +654,8 @@ impl DayName {
 }
 
 /// The three-letter month abbreviation, e.g. `Jan`.
-fn month_name(month: i32) -> &'static str {
-    MONTHS[usize::try_from(month - 1).expect("month is 1..=12")]
+fn month_name(month: u8) -> &'static str {
+    MONTHS[usize::from(month) - 1]
 }
 
 /// Formats an HTTP date as a string in its original textual format.
@@ -1213,7 +1219,7 @@ mod tests {
     }
 
     // A fixed valid `DateTime` used by the constructor tests below.
-    fn sun_nov_6(year: i32) -> DateTime {
+    fn sun_nov_6(year: u16) -> DateTime {
         DateTime {
             dayname: DayName::Sun,
             date: Date::new(year, 11, 6).unwrap(),
@@ -1224,7 +1230,6 @@ mod tests {
     #[test]
     fn date_new_rejects_out_of_range() {
         assert!(Date::new(1994, 11, 6).is_ok());
-        assert!(Date::new(-1, 11, 6).is_err());
         assert!(Date::new(10_000, 11, 6).is_err());
         assert!(Date::new(1994, 0, 6).is_err());
         assert!(Date::new(1994, 13, 6).is_err());
@@ -1238,7 +1243,6 @@ mod tests {
         assert!(Time::new(24, 0, 0).is_err());
         assert!(Time::new(0, 60, 0).is_err());
         assert!(Time::new(0, 0, 60).is_err());
-        assert!(Time::new(-1, 0, 0).is_err());
     }
 
     #[test]

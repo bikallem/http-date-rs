@@ -45,7 +45,7 @@ impl std::error::Error for ChronoError {}
 
 /// Maps an RFC 850 two-digit year (0–99) to a full year using the POSIX
 /// century window: 69–99 → 1900s, 0–68 → 2000s.
-fn posix_year(two_digit_year: i32) -> i32 {
+fn posix_year(two_digit_year: u16) -> u16 {
     if (69..=99).contains(&two_digit_year) {
         1900 + two_digit_year
     } else {
@@ -72,7 +72,6 @@ fn dayname_from_weekday(weekday: Weekday) -> DayName {
 ///
 /// This fails if the calendar date does not exist (for example 31 February),
 /// which [`decode`](crate::decode) accepts but chrono does not.
-#[allow(clippy::cast_sign_loss)] // month/day/time are validated to 1-12/1-31/0-59, so i32 -> u32 casts cannot lose the sign
 impl TryFrom<HttpDate> for ChronoDateTime<Utc> {
     type Error = ChronoError;
 
@@ -83,20 +82,21 @@ impl TryFrom<HttpDate> for ChronoDateTime<Utc> {
         } else {
             dt.date.year()
         };
-        let date = NaiveDate::from_ymd_opt(year, dt.date.month() as u32, dt.date.day() as u32)
-            .ok_or_else(|| {
-                ChronoError::new(format!(
-                    "{year:04}-{:02}-{:02} is not a valid calendar date",
-                    dt.date.month(),
-                    dt.date.day(),
-                ))
-            })?;
+        let date =
+            NaiveDate::from_ymd_opt(year.into(), dt.date.month().into(), dt.date.day().into())
+                .ok_or_else(|| {
+                    ChronoError::new(format!(
+                        "{year:04}-{:02}-{:02} is not a valid calendar date",
+                        dt.date.month(),
+                        dt.date.day(),
+                    ))
+                })?;
         // HttpDate guarantees hour 0–23, minute/second 0–59, which are exactly
         // chrono's valid ranges, so this cannot fail.
         let time = NaiveTime::from_hms_opt(
-            dt.time.hour() as u32,
-            dt.time.minute() as u32,
-            dt.time.second() as u32,
+            dt.time.hour().into(),
+            dt.time.minute().into(),
+            dt.time.second().into(),
         )
         .ok_or_else(|| ChronoError::new("time out of range"))?;
         Ok(ChronoDateTime::from_naive_utc_and_offset(
@@ -111,18 +111,20 @@ impl TryFrom<HttpDate> for ChronoDateTime<Utc> {
 ///
 /// This fails if the year is outside 0–9999, which cannot be represented in
 /// a four-digit HTTP date year.
-#[allow(clippy::cast_possible_wrap)] // chrono month/day/time are always <= 9999/59, so u32 -> i32 casts cannot wrap
+#[allow(clippy::cast_possible_truncation)] // chrono month/day/time are always <= 59, so u32 -> u8 casts cannot truncate
 impl TryFrom<ChronoDateTime<Utc>> for HttpDate {
     type Error = ChronoError;
 
     fn try_from(dt: ChronoDateTime<Utc>) -> Result<Self, Self::Error> {
         let naive = dt.naive_utc();
-        let date = Date::new(naive.year(), naive.month() as i32, naive.day() as i32)
-            .map_err(|_| ChronoError::new(format!("year {} is outside 0-9999", naive.year())))?;
+        let date = u16::try_from(naive.year())
+            .ok()
+            .and_then(|year| Date::new(year, naive.month() as u8, naive.day() as u8).ok())
+            .ok_or_else(|| ChronoError::new(format!("year {} is outside 0-9999", naive.year())))?;
         let time = Time::new(
-            naive.hour() as i32,
-            naive.minute() as i32,
-            naive.second() as i32,
+            naive.hour() as u8,
+            naive.minute() as u8,
+            naive.second() as u8,
         )
         .map_err(|_| ChronoError::new("time out of range"))?;
         Ok(HttpDate::imf_fixdate(DateTime {

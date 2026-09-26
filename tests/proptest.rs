@@ -35,18 +35,18 @@ fn dayname() -> impl Strategy<Value = DayName> {
 ///   encoder emits exactly two digits and the parser reads two.
 fn datetime(four_digit_year: bool) -> impl Strategy<Value = DateTime> {
     let year = if four_digit_year {
-        0..10_000i32
+        0..10_000u16
     } else {
-        0..100i32
+        0..100u16
     };
     (
         dayname(),
         year,
-        1..13i32, // month
-        1..29i32, // day
-        0..24i32, // hour
-        0..60i32, // minute
-        0..60i32, // second
+        1..13u8, // month
+        1..29u8, // day
+        0..24u8, // hour
+        0..60u8, // minute
+        0..60u8, // second
     )
         .prop_map(
             |(dayname, year, month, day, hour, minute, second)| DateTime {
@@ -107,12 +107,12 @@ proptest! {
 /// Builds a [`DateTime`] from raw components, panicking if out of range.
 fn dt(
     dayname: DayName,
-    year: i32,
-    month: i32,
-    day: i32,
-    hour: i32,
-    minute: i32,
-    second: i32,
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
 ) -> DateTime {
     DateTime {
         dayname,
