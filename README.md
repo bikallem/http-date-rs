@@ -68,7 +68,7 @@ Enabled with the `chrono` feature:
 
 ```toml
 [dependencies]
-http-date = { version = "0.1", features = ["chrono"] }
+http-date = { version = "0.2", features = ["chrono"] }
 ```
 
 Convert `HttpDate` to a UTC datetime and back:

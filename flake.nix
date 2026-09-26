@@ -32,15 +32,20 @@
         # Nightly toolchain for cargo-fuzz: libFuzzer's sanitizers need the
         # nightly-only `-Zsanitizer`/`-Zbuild-std` flags. `rust-src` is
         # required for `-Zbuild-std`; `llvm-tools-preview` for coverage.
-        nightly = pkgs.rust-bin.selectLatestNightlyWith (toolchain:
+        nightly = pkgs.rust-bin.selectLatestNightlyWith (
+          toolchain:
           toolchain.minimal.override {
-            extensions = [ "llvm-tools-preview" "rust-src" ];
-          });
+            extensions = [
+              "llvm-tools-preview"
+              "rust-src"
+            ];
+          }
+        );
       in
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "http-date";
-          version = "0.1.0";
+          version = "0.2.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           # Library crate: nothing to install, just create the output.
