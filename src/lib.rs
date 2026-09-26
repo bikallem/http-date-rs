@@ -47,7 +47,7 @@ use std::fmt;
 #[cfg(feature = "chrono")]
 pub mod chrono;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Clone, Copy)]
 enum DayNameTok {
     Short(DayName),
     Long(DayName),
@@ -87,7 +87,7 @@ const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Clone, Copy)]
 enum PunctuationTok {
     Comma,
     Space,
@@ -515,7 +515,7 @@ impl<'a> Decoder<'a> {
             date,
             time,
         };
-        HttpDate::rfc850(date).map_err(|e| e.at(self.pos))
+        HttpDate::rfc850(date)
     }
 
     fn date3(&mut self) -> Result<(u8, u8), Error> {
