@@ -734,283 +734,6 @@ mod tests {
     use expect_test::expect;
     use std::fmt::Write;
 
-    #[test]
-    fn expect_matching_byte_advances_position() {
-        let mut d = Decoder::new("abc");
-        assert_eq!(d.expect(b'a'), Ok(()));
-        assert_eq!(d.pos, 1);
-    }
-
-    #[test]
-    fn expect_mismatched_byte_returns_error() {
-        let mut d = Decoder::new("abc");
-        let result = d.expect(b'b');
-        assert!(result.is_err());
-        assert_eq!(d.pos, 0); // Position should not advance on error
-    }
-
-    #[test]
-    fn expect_at_end_of_input_returns_error() {
-        let mut d = Decoder::new("ab");
-        d.pos = 2;
-        let err = d.expect(b'a').unwrap_err();
-        expect![[r#"
-            Error {
-                msg: "unexpected end of input",
-                pos: Some(
-                    2,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&err);
-    }
-
-    #[test]
-    fn parsing_punctuated_sequence_advances_through_input() {
-        let mut d = Decoder::new("Sun, 06");
-        // weekday(Sun)
-        d.expect(b'S').unwrap();
-        d.expect(b'u').unwrap();
-        d.expect(b'n').unwrap();
-        d.comma().unwrap();
-        d.space().unwrap();
-        // day-of-month(06)
-        d.expect(b'0').unwrap();
-        d.expect(b'6').unwrap();
-        assert_eq!(d.pos, 7); // consumed "Sun, 06"
-    }
-
-    #[test]
-    fn parsing_date_sequence_with_month_advances_through_input() {
-        let mut d = Decoder::new("Sun, 06 Nov 1994");
-        // weekday(Sun)
-        d.expect(b'S').unwrap();
-        d.expect(b'u').unwrap();
-        d.expect(b'n').unwrap();
-        d.comma().unwrap();
-        d.space().unwrap();
-        // day-of-month(06)
-        assert_eq!(d.day().unwrap(), 6);
-        d.space().unwrap();
-        // month(Nov)
-        let month = d.month().unwrap();
-        assert_eq!(month, 11);
-        d.space().unwrap();
-        // year(1994)
-        assert_eq!(d.year().unwrap(), 1994);
-        assert_eq!(d.pos, 16); // consumed "Sun, 06 Nov 1994"
-    }
-
-    #[test]
-    fn string_reads_alphabetic_run_and_advances() {
-        let mut d = Decoder::new("Sun, 06");
-        assert_eq!(d.string(), "Sun");
-        assert_eq!(d.pos, 3); // consumed "Sun"
-    }
-
-    #[test]
-    fn string_reads_to_end_of_input() {
-        let mut d = Decoder::new("GMT");
-        assert_eq!(d.string(), "GMT");
-        assert_eq!(d.pos, 3); // consumed "GMT"
-    }
-
-    #[test]
-    fn string_returns_empty_when_current_byte_is_not_alphabetic() {
-        let mut d = Decoder::new("123");
-        assert_eq!(d.string(), "");
-        assert_eq!(d.pos, 0); // position should not advance
-    }
-
-    #[test]
-    fn string_returns_empty_at_end_of_input() {
-        let mut d = Decoder::new("Sun,");
-        d.pos = 4; // position at end of input
-        assert_eq!(d.string(), "");
-        assert_eq!(d.pos, 4); // position should not advance
-    }
-
-    // Test cases for dayname_tok
-    #[test]
-    fn dayname_tok() {
-        let mut out = String::new();
-        for s in ["Mon", "Sunday", "Funday", "mon", "Wednes", ""] {
-            let mut d = Decoder::new(s);
-            let tok = d.dayname_tok();
-            writeln!(out, "{s:?} => {tok:?}, pos={}", d.pos).unwrap();
-        }
-        expect![[r#"
-            "Mon" => Ok(Short(Mon)), pos=3
-            "Sunday" => Ok(Long(Sun)), pos=6
-            "Funday" => Err(Error { msg: "invalid day name", pos: Some(0) }), pos=6
-            "mon" => Err(Error { msg: "invalid day name", pos: Some(0) }), pos=3
-            "Wednes" => Err(Error { msg: "invalid day name", pos: Some(0) }), pos=6
-            "" => Err(Error { msg: "invalid day name", pos: Some(0) }), pos=0
-        "#]]
-        .assert_eq(&out);
-    }
-
-    // Test cases for punctuation_tok
-
-    #[test]
-    fn punctuation_tok_parses_comma() {
-        let mut d = Decoder::new(",06 Nov");
-        assert_eq!(d.punctuation_tok(), Ok(PunctuationTok::Comma));
-        assert_eq!(d.pos, 1);
-    }
-
-    #[test]
-    fn punctuation_tok_parses_space() {
-        let mut d = Decoder::new(" 06 Nov");
-        assert_eq!(d.punctuation_tok(), Ok(PunctuationTok::Space));
-        assert_eq!(d.pos, 1);
-    }
-
-    #[test]
-    fn punctuation_tok_rejects_non_punctuation() {
-        let mut d = Decoder::new("06 Nov");
-        let err = d.punctuation_tok().unwrap_err();
-        expect![[r#"
-            Error {
-                msg: "expected ',' or ' ' after day name",
-                pos: Some(
-                    0,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&err);
-    }
-
-    #[test]
-    fn punctuation_tok_at_end_of_input_returns_error() {
-        let mut d = Decoder::new("06");
-        d.pos = 2; // at end of input
-        let err = d.punctuation_tok().unwrap_err();
-        expect![[r#"
-            Error {
-                msg: "unexpected end of input",
-                pos: Some(
-                    2,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&err);
-    }
-
-    // Test cases for date1
-
-    #[test]
-    fn date1_parses_valid_date() {
-        let mut d = Decoder::new("06 Nov 1994");
-        assert_eq!(d.date1(), Date::new(1994, 11, 6));
-        assert_eq!(d.pos, 11); // consumed "06 Nov 1994"
-    }
-
-    #[test]
-    fn date1_parses_leading_zero_day() {
-        let mut d = Decoder::new("01 Jan 2000");
-        assert_eq!(d.date1(), Date::new(2000, 1, 1));
-        assert_eq!(d.pos, 11);
-    }
-
-    #[test]
-    fn date1_rejects_non_digit_day() {
-        expect![[r#"
-            Error {
-                msg: "expected digit",
-                pos: Some(
-                    1,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&Decoder::new("0x Nov 1994").date1().unwrap_err());
-    }
-
-    #[test]
-    fn date1_rejects_missing_space_after_day() {
-        expect![[r#"
-            Error {
-                msg: "unexpected character",
-                pos: Some(
-                    2,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&Decoder::new("06Nov 1994").date1().unwrap_err());
-    }
-
-    #[test]
-    fn date1_rejects_invalid_month() {
-        expect![[r#"
-            Error {
-                msg: "invalid month value",
-                pos: Some(
-                    3,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&Decoder::new("06 Xyz 1994").date1().unwrap_err());
-    }
-
-    #[test]
-    fn date1_rejects_truncated_year() {
-        expect![[r#"
-            Error {
-                msg: "unexpected end of input",
-                pos: Some(
-                    9,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&Decoder::new("06 Nov 19").date1().unwrap_err());
-    }
-
-    #[test]
-    fn time_parses_valid_time() {
-        let mut d = Decoder::new("08:49:37 GMT");
-        assert_eq!(d.time(), Time::new(8, 49, 37));
-        assert_eq!(d.pos, 8); // consumed "08:49:37"
-    }
-
-    #[test]
-    fn time_rejects_missing_colon() {
-        expect![[r#"
-            Error {
-                msg: "unexpected character",
-                pos: Some(
-                    2,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&Decoder::new("0849:37").time().unwrap_err());
-    }
-
-    #[test]
-    fn time_rejects_non_digit_minute() {
-        expect![[r#"
-            Error {
-                msg: "expected digit",
-                pos: Some(
-                    3,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&Decoder::new("08:x9:37").time().unwrap_err());
-    }
-
-    #[test]
-    fn time_rejects_truncated_seconds() {
-        expect![[r#"
-            Error {
-                msg: "unexpected end of input",
-                pos: Some(
-                    7,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&Decoder::new("08:49:3").time().unwrap_err());
-    }
-
     // Test cases for decode
 
     fn expect_imf_fixdate(decoded: &HttpDate) -> DateTime {
@@ -1128,76 +851,52 @@ mod tests {
     }
 
     #[test]
-    fn decode_rejects_invalid_dayname() {
-        let err = decode("Funday, 06 Nov 1994 08:49:37 GMT").expect_err("expected decode to fail");
+    fn decode_rejects_malformed_input() {
+        let actual = decode_all(&[
+            "",
+            "Funday, 06 Nov 1994 08:49:37 GMT",
+            "mon, 06 Nov 1994 08:49:37 GMT",
+            "Wednes, 06-Nov-94 08:49:37 GMT",
+            ", 06 Nov 1994 08:49:37 GMT",
+            "Sun",
+            "Sun;06 Nov 1994 08:49:37 GMT",
+            "Sun,06 Nov 1994 08:49:37 GMT",
+            "Sun 06 Nov 1994",
+            "Sun, 0x Nov 1994 08:49:37 GMT",
+            "Sun, 06Nov 1994 08:49:37 GMT",
+            "Sun, 06 Xyz 1994 08:49:37 GMT",
+            "Sun, 06 Nov",
+            "Sun, 06 Nov 19",
+            "Sun, 06 Nov 1994 0849:37 GMT",
+            "Sun, 06 Nov 1994 08:x9:37 GMT",
+            "Sun, 06 Nov 1994 08:49:3",
+            "Sun, 06 Nov 1994 08:49:37 ",
+            "Sunday 06-Nov-94 08:49:37 GMT",
+            "Sunday, 06 Nov 94 08:49:37 GMT",
+        ]);
         expect![[r#"
-            Error {
-                msg: "invalid day name",
-                pos: Some(
-                    0,
-                ),
-            }
+            "" => invalid day name at position 0
+            "Funday, 06 Nov 1994 08:49:37 GMT" => invalid day name at position 0
+            "mon, 06 Nov 1994 08:49:37 GMT" => invalid day name at position 0
+            "Wednes, 06-Nov-94 08:49:37 GMT" => invalid day name at position 0
+            ", 06 Nov 1994 08:49:37 GMT" => invalid day name at position 0
+            "Sun" => unexpected end of input at position 3
+            "Sun;06 Nov 1994 08:49:37 GMT" => expected ',' or ' ' after day name at position 3
+            "Sun,06 Nov 1994 08:49:37 GMT" => unexpected character at position 4
+            "Sun 06 Nov 1994" => invalid month value at position 4
+            "Sun, 0x Nov 1994 08:49:37 GMT" => expected digit at position 6
+            "Sun, 06Nov 1994 08:49:37 GMT" => unexpected character at position 7
+            "Sun, 06 Xyz 1994 08:49:37 GMT" => invalid month value at position 8
+            "Sun, 06 Nov" => unexpected end of input at position 11
+            "Sun, 06 Nov 19" => unexpected end of input at position 14
+            "Sun, 06 Nov 1994 0849:37 GMT" => unexpected character at position 19
+            "Sun, 06 Nov 1994 08:x9:37 GMT" => expected digit at position 20
+            "Sun, 06 Nov 1994 08:49:3" => unexpected end of input at position 24
+            "Sun, 06 Nov 1994 08:49:37 " => expected 'GMT' at position 26
+            "Sunday 06-Nov-94 08:49:37 GMT" => unexpected character at position 6
+            "Sunday, 06 Nov 94 08:49:37 GMT" => unexpected character at position 10
         "#]]
-        .assert_debug_eq(&err);
-    }
-
-    #[test]
-    fn decode_rejects_missing_punctuation() {
-        // "Sun 06 Nov..." is neither ", " (IMF) nor " " after a short name
-        // followed by a valid asctime; "Sun 06" fails because a month is
-        // expected next.
-        let err = decode("Sun 06 Nov 1994").expect_err("expected decode to fail");
-        expect![[r#"
-            Error {
-                msg: "invalid month value",
-                pos: Some(
-                    4,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&err);
-    }
-
-    #[test]
-    fn decode_rejects_imf_fixdate_missing_gmt() {
-        let err = decode("Sun, 06 Nov 1994 08:49:37 ").expect_err("expected decode to fail");
-        expect![[r#"
-            Error {
-                msg: "expected 'GMT'",
-                pos: Some(
-                    26,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&err);
-    }
-
-    #[test]
-    fn decode_rejects_truncated_input() {
-        let err = decode("Sun, 06 Nov").expect_err("expected decode to fail");
-        expect![[r#"
-            Error {
-                msg: "unexpected end of input",
-                pos: Some(
-                    11,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&err);
-    }
-
-    #[test]
-    fn decode_rejects_empty_input() {
-        let err = decode("").expect_err("expected decode to fail");
-        expect![[r#"
-            Error {
-                msg: "invalid day name",
-                pos: Some(
-                    0,
-                ),
-            }
-        "#]]
-        .assert_debug_eq(&err);
+        .assert_eq(&actual);
     }
 
     #[test]
