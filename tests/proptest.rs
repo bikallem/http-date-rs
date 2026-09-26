@@ -3,12 +3,12 @@
 //!
 //! The properties here match the Alcobar suite there:
 //!
-//! 1. `decode` never panics on arbitrary input (`test_decode_no_crash`);
-//! 2. if `decode` succeeds, re-encoding and re-decoding must yield the same
-//!    value (`test_decode_encode_stable`);
-//! 3. `encode` → `decode` round-trips for each of the three formats;
-//! 4. a corpus of known-good examples round-trips (`test_corpus`);
-//! 5. malformed inputs are rejected (`test_malformed`).
+//! 1. `decode` never panics on arbitrary input, and if it succeeds,
+//!    re-encoding and re-decoding must yield the same value
+//!    (`test_decode_no_crash` and `test_decode_encode_stable`);
+//! 2. `encode` → `decode` round-trips for each of the three formats;
+//! 3. a corpus of known-good examples round-trips (`test_corpus`);
+//! 4. malformed inputs are rejected (`test_malformed`).
 
 use http_date::{Date, DateTime, DayName, HttpDate, Time, decode, encode};
 use proptest::prelude::*;
@@ -58,16 +58,10 @@ fn datetime(four_digit_year: bool) -> impl Strategy<Value = DateTime> {
 }
 
 proptest! {
-    /// Property 1: `decode` must return a value or an error — never panic
-    /// (parity: `test_decode_no_crash`).
-    #[test]
-    fn decode_never_panics(input in any::<String>()) {
-        let _ = decode(&input);
-    }
-
-    /// Property 2: if `decode` succeeds, re-encoding and re-decoding must
-    /// yield the same value. Invalid inputs are discarded, as in the OCaml
-    /// suite's `test_decode_encode_stable`.
+    /// Property 1: `decode` never panics, and if it succeeds, re-encoding
+    /// and re-decoding must yield the same value. Invalid inputs are
+    /// discarded (parity: `test_decode_no_crash` and
+    /// `test_decode_encode_stable`).
     #[test]
     fn decode_encode_decode_is_stable(input in any::<String>()) {
         if let Ok(date) = decode(&input) {

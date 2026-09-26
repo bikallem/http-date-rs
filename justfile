@@ -41,8 +41,8 @@ doc-open:
 # (required by libFuzzer's sanitizers), cargo-fuzz, and clang. These recipes
 # enter it automatically, so they work from any shell.
 #
-# Targets: `decode` (decode never panics) and `roundtrip` (decode/encode
-# round-trip property).
+# Targets: `roundtrip` (decode never panics and decode/encode round-trips)
+# and `chrono_roundtrip` (chrono conversion fixed point).
 # ---------------------------------------------------------------------------
 
 # List the available fuzz targets.

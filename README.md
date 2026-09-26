@@ -123,8 +123,8 @@ just doc         # build API docs
 just ci          # fmt-check + lint + test
 ```
 
-Fuzzing uses [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) with three
-targets — `decode` (never panics), `roundtrip` (encode/decode stability), and
+Fuzzing uses [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) with two
+targets: `roundtrip` (decode never panics and encode/decode is stable) and
 `chrono_roundtrip` (chrono conversion fixed point):
 
 ```sh
