@@ -109,11 +109,11 @@ impl Date {
     ///
     /// # Errors
     ///
-    /// Returns a [`DecodeError`] if a component is out of range: year 0–9999,
+    /// Returns a [`Error`] if a component is out of range: year 0–9999,
     /// month 1–12, day 1–31.
-    pub fn new(year: u16, month: u8, day: u8) -> Result<Self, DecodeError> {
+    pub fn new(year: u16, month: u8, day: u8) -> Result<Self, Error> {
         if year > 9999 || month == 0 || month > 12 || day == 0 || day > 31 {
-            return Err(DecodeError::new("Date out of range"));
+            return Err(Error::new("date out of range"));
         }
         Ok(Self { year, month, day })
     }
@@ -153,11 +153,11 @@ impl Time {
     ///
     /// # Errors
     ///
-    /// Returns a [`DecodeError`] if a component is out of range: hour 0–23,
+    /// Returns a [`Error`] if a component is out of range: hour 0–23,
     /// minute 0–59, second 0–59.
-    pub fn new(hour: u8, minute: u8, second: u8) -> Result<Self, DecodeError> {
+    pub fn new(hour: u8, minute: u8, second: u8) -> Result<Self, Error> {
         if hour > 23 || minute > 59 || second > 59 {
-            return Err(DecodeError::new("Time out of range"));
+            return Err(Error::new("time out of range"));
         }
         Ok(Self {
             hour,
@@ -234,11 +234,11 @@ impl HttpDate {
     ///
     /// # Errors
     ///
-    /// Returns a [`DecodeError`] if the year is outside 0–99, which cannot be
+    /// Returns a [`Error`] if the year is outside 0–99, which cannot be
     /// represented in RFC 850's two-digit-year format.
-    pub fn rfc850(dt: DateTime) -> Result<Self, DecodeError> {
+    pub fn rfc850(dt: DateTime) -> Result<Self, Error> {
         if dt.date.year > 99 {
-            return Err(DecodeError::new("RFC 850 year out of range (0-99)"));
+            return Err(Error::new("RFC 850 year out of range (0-99)"));
         }
         Ok(Self {
             format: Format::Rfc850,
@@ -280,12 +280,12 @@ impl HttpDate {
 /* ------------------- decoder ------------------- */
 /// An error returned when an HTTP date cannot be parsed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DecodeError {
+pub struct Error {
     msg: &'static str,
     pos: Option<usize>,
 }
 
-impl DecodeError {
+impl Error {
     /// Constructs a new decode error with the given message.
     #[must_use]
     const fn new(msg: &'static str) -> Self {
@@ -306,9 +306,9 @@ impl DecodeError {
     }
 }
 
-impl fmt::Display for DecodeError {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "DecodeError: {}", self.msg)?;
+        f.write_str(self.msg)?;
         if let Some(pos) = self.pos {
             write!(f, " at position {pos}")?;
         }
@@ -316,7 +316,7 @@ impl fmt::Display for DecodeError {
     }
 }
 
-impl std::error::Error for DecodeError {}
+impl std::error::Error for Error {}
 
 /// A streaming parser for HTTP date values, used internally by [`decode`].
 struct Decoder<'a> {
@@ -335,53 +335,53 @@ impl<'a> Decoder<'a> {
     }
 
     #[inline]
-    fn byte_at(&self, idx: usize) -> Result<u8, DecodeError> {
+    fn byte_at(&self, idx: usize) -> Result<u8, Error> {
         self.buf
             .as_bytes()
             .get(idx)
             .copied()
-            .ok_or_else(|| DecodeError::new("Unexpected end of input").at(idx))
+            .ok_or_else(|| Error::new("unexpected end of input").at(idx))
     }
 
-    fn expect(&mut self, expected: u8) -> Result<(), DecodeError> {
+    fn expect(&mut self, expected: u8) -> Result<(), Error> {
         let actual = self.byte_at(self.pos)?;
         if actual == expected {
             self.advance(1);
             Ok(())
         } else {
-            Err(DecodeError::new("Unexpected character").at(self.pos))
+            Err(Error::new("unexpected character").at(self.pos))
         }
     }
 
     #[inline]
-    fn space(&mut self) -> Result<(), DecodeError> {
+    fn space(&mut self) -> Result<(), Error> {
         self.expect(b' ')
     }
 
     #[inline]
-    fn comma(&mut self) -> Result<(), DecodeError> {
+    fn comma(&mut self) -> Result<(), Error> {
         self.expect(b',')
     }
 
     #[inline]
-    fn colon(&mut self) -> Result<(), DecodeError> {
+    fn colon(&mut self) -> Result<(), Error> {
         self.expect(b':')
     }
 
-    fn month(&mut self) -> Result<u8, DecodeError> {
+    fn month(&mut self) -> Result<u8, Error> {
         let m = self
             .buf
             .get(self.pos..self.pos + 3)
-            .ok_or_else(|| DecodeError::new("Unexpected end of input").at(self.pos))?;
+            .ok_or_else(|| Error::new("unexpected end of input").at(self.pos))?;
         let n = (1..)
             .zip(MONTHS)
             .find_map(|(n, name)| (name == m).then_some(n))
-            .ok_or_else(|| DecodeError::new("Invalid month value").at(self.pos))?;
+            .ok_or_else(|| Error::new("invalid month value").at(self.pos))?;
         self.advance(3);
         Ok(n)
     }
 
-    fn digits(&mut self, n: usize) -> Result<u16, DecodeError> {
+    fn digits(&mut self, n: usize) -> Result<u16, Error> {
         let buf = self.buf.as_bytes();
         let mut value: u16 = 0;
         for i in 0..n {
@@ -390,24 +390,24 @@ impl<'a> Decoder<'a> {
                 Some(&c @ b'0'..=b'9') => {
                     value = value * 10 + u16::from(c - b'0');
                 }
-                Some(_) => return Err(DecodeError::new("Expected digit").at(pos)),
-                None => return Err(DecodeError::new("Unexpected end of input").at(pos)),
+                Some(_) => return Err(Error::new("expected digit").at(pos)),
+                None => return Err(Error::new("unexpected end of input").at(pos)),
             }
         }
         self.advance(n);
         Ok(value)
     }
 
-    fn year(&mut self) -> Result<u16, DecodeError> {
+    fn year(&mut self) -> Result<u16, Error> {
         self.digits(4)
     }
 
-    fn day(&mut self) -> Result<u8, DecodeError> {
+    fn day(&mut self) -> Result<u8, Error> {
         self.digits_u8(2)
     }
 
     /// Reads a one- or two-digit field, which always fits in a `u8`.
-    fn digits_u8(&mut self, n: usize) -> Result<u8, DecodeError> {
+    fn digits_u8(&mut self, n: usize) -> Result<u8, Error> {
         let value = self.digits(n)?;
         Ok(u8::try_from(value).expect("at most two digits"))
     }
@@ -422,7 +422,7 @@ impl<'a> Decoder<'a> {
         &self.buf[start..self.pos]
     }
 
-    fn dayname_tok(&mut self) -> Result<DayNameTok, DecodeError> {
+    fn dayname_tok(&mut self) -> Result<DayNameTok, Error> {
         let start = self.pos;
         let s = self.string();
         for d in DAYS {
@@ -433,21 +433,21 @@ impl<'a> Decoder<'a> {
                 return Ok(DayNameTok::Long(d));
             }
         }
-        Err(DecodeError::new("Invalid day name").at(start))
+        Err(Error::new("invalid day name").at(start))
     }
 
-    fn punctuation_tok(&mut self) -> Result<PunctuationTok, DecodeError> {
+    fn punctuation_tok(&mut self) -> Result<PunctuationTok, Error> {
         let c = self.byte_at(self.pos)?;
         let tok = match c {
             b',' => PunctuationTok::Comma,
             b' ' => PunctuationTok::Space,
-            _ => return Err(DecodeError::new("Expected ',' or ' ' after day name").at(self.pos)),
+            _ => return Err(Error::new("expected ',' or ' ' after day name").at(self.pos)),
         };
         self.advance(1);
         Ok(tok)
     }
 
-    fn date1(&mut self) -> Result<Date, DecodeError> {
+    fn date1(&mut self) -> Result<Date, Error> {
         let start = self.pos;
         let day = self.day()?;
         self.space()?;
@@ -457,7 +457,7 @@ impl<'a> Decoder<'a> {
         Date::new(year, month, day).map_err(|e| e.at(start))
     }
 
-    fn time(&mut self) -> Result<Time, DecodeError> {
+    fn time(&mut self) -> Result<Time, Error> {
         let start = self.pos;
         let hour = self.digits_u8(2)?;
         self.colon()?;
@@ -467,16 +467,16 @@ impl<'a> Decoder<'a> {
         Time::new(hour, minute, second).map_err(|e| e.at(start))
     }
 
-    fn gmt(&mut self) -> Result<(), DecodeError> {
+    fn gmt(&mut self) -> Result<(), Error> {
         let start = self.pos;
         if self.string() != "GMT" {
-            return Err(DecodeError::new("Expected 'GMT'").at(start));
+            return Err(Error::new("expected 'GMT'").at(start));
         }
         Ok(())
     }
 
     // IMF-fixdate: day-name "," SP date1 SP time SP "GMT"
-    fn imf_fixdate(&mut self, dayname: DayName) -> Result<HttpDate, DecodeError> {
+    fn imf_fixdate(&mut self, dayname: DayName) -> Result<HttpDate, Error> {
         self.space()?;
         let date = self.date1()?;
         self.space()?;
@@ -490,7 +490,7 @@ impl<'a> Decoder<'a> {
         }))
     }
 
-    fn date2(&mut self) -> Result<Date, DecodeError> {
+    fn date2(&mut self) -> Result<Date, Error> {
         let start = self.pos;
         let day = self.day()?;
         self.expect(b'-')?;
@@ -501,7 +501,7 @@ impl<'a> Decoder<'a> {
     }
 
     // RFC 850 date: day-name "," SP date2 SP time SP "GMT"
-    fn rfc850_date(&mut self, dayname: DayName) -> Result<HttpDate, DecodeError> {
+    fn rfc850_date(&mut self, dayname: DayName) -> Result<HttpDate, Error> {
         self.comma()?;
         self.space()?;
         let date = self.date2()?;
@@ -517,7 +517,7 @@ impl<'a> Decoder<'a> {
         HttpDate::rfc850(date).map_err(|e| e.at(self.pos))
     }
 
-    fn date3(&mut self) -> Result<(u8, u8), DecodeError> {
+    fn date3(&mut self) -> Result<(u8, u8), Error> {
         // month
         let m = self.month()?;
         self.space()?;
@@ -533,7 +533,7 @@ impl<'a> Decoder<'a> {
     }
 
     // asctime date: day-name SP month SP (2DIGIT / (SP 1DIGIT)) SP time SP 4DIGIT
-    fn asctime_date(&mut self, dayname: DayName) -> Result<HttpDate, DecodeError> {
+    fn asctime_date(&mut self, dayname: DayName) -> Result<HttpDate, Error> {
         let start = self.pos;
         let (month, day) = self.date3()?;
         self.space()?;
@@ -562,7 +562,7 @@ impl<'a> Decoder<'a> {
 ///
 /// # Errors
 ///
-/// Returns a [`DecodeError`] if `buf` is not a well-formed HTTP date, for
+/// Returns a [`Error`] if `buf` is not a well-formed HTTP date, for
 /// example when the day name or month is unknown, a required separator is
 /// missing, the input is truncated, there is trailing data after the date,
 /// or a component is out of range (day 1–31, hour 0–23, minute/second 0–59).
@@ -606,7 +606,7 @@ impl<'a> Decoder<'a> {
 ///
 /// assert!(decode("not a date").is_err());
 /// ```
-pub fn decode(buf: &str) -> Result<HttpDate, DecodeError> {
+pub fn decode(buf: &str) -> Result<HttpDate, Error> {
     let mut decoder = Decoder::new(buf);
     let date = match decoder.dayname_tok()? {
         DayNameTok::Long(dayname) => decoder.rfc850_date(dayname),
@@ -618,7 +618,7 @@ pub fn decode(buf: &str) -> Result<HttpDate, DecodeError> {
     // The RFC 9110 `HTTP-date` grammar spans the whole field value, so any
     // leftover input means `buf` is not a well-formed HTTP date.
     if decoder.pos != decoder.buf.len() {
-        return Err(DecodeError::new("Trailing data after HTTP date").at(decoder.pos));
+        return Err(Error::new("trailing data after HTTP date").at(decoder.pos));
     }
     Ok(date)
 }
@@ -755,8 +755,8 @@ mod tests {
         d.pos = 2;
         let err = d.expect(b'a').unwrap_err();
         expect![[r#"
-            DecodeError {
-                msg: "Unexpected end of input",
+            Error {
+                msg: "unexpected end of input",
                 pos: Some(
                     2,
                 ),
@@ -842,10 +842,10 @@ mod tests {
         expect![[r#"
             "Mon" => Ok(Short(Mon)), pos=3
             "Sunday" => Ok(Long(Sun)), pos=6
-            "Funday" => Err(DecodeError { msg: "Invalid day name", pos: Some(0) }), pos=6
-            "mon" => Err(DecodeError { msg: "Invalid day name", pos: Some(0) }), pos=3
-            "Wednes" => Err(DecodeError { msg: "Invalid day name", pos: Some(0) }), pos=6
-            "" => Err(DecodeError { msg: "Invalid day name", pos: Some(0) }), pos=0
+            "Funday" => Err(Error { msg: "invalid day name", pos: Some(0) }), pos=6
+            "mon" => Err(Error { msg: "invalid day name", pos: Some(0) }), pos=3
+            "Wednes" => Err(Error { msg: "invalid day name", pos: Some(0) }), pos=6
+            "" => Err(Error { msg: "invalid day name", pos: Some(0) }), pos=0
         "#]]
         .assert_eq(&out);
     }
@@ -871,8 +871,8 @@ mod tests {
         let mut d = Decoder::new("06 Nov");
         let err = d.punctuation_tok().unwrap_err();
         expect![[r#"
-            DecodeError {
-                msg: "Expected ',' or ' ' after day name",
+            Error {
+                msg: "expected ',' or ' ' after day name",
                 pos: Some(
                     0,
                 ),
@@ -887,8 +887,8 @@ mod tests {
         d.pos = 2; // at end of input
         let err = d.punctuation_tok().unwrap_err();
         expect![[r#"
-            DecodeError {
-                msg: "Unexpected end of input",
+            Error {
+                msg: "unexpected end of input",
                 pos: Some(
                     2,
                 ),
@@ -916,8 +916,8 @@ mod tests {
     #[test]
     fn date1_rejects_non_digit_day() {
         expect![[r#"
-            DecodeError {
-                msg: "Expected digit",
+            Error {
+                msg: "expected digit",
                 pos: Some(
                     1,
                 ),
@@ -929,8 +929,8 @@ mod tests {
     #[test]
     fn date1_rejects_missing_space_after_day() {
         expect![[r#"
-            DecodeError {
-                msg: "Unexpected character",
+            Error {
+                msg: "unexpected character",
                 pos: Some(
                     2,
                 ),
@@ -942,8 +942,8 @@ mod tests {
     #[test]
     fn date1_rejects_invalid_month() {
         expect![[r#"
-            DecodeError {
-                msg: "Invalid month value",
+            Error {
+                msg: "invalid month value",
                 pos: Some(
                     3,
                 ),
@@ -955,8 +955,8 @@ mod tests {
     #[test]
     fn date1_rejects_truncated_year() {
         expect![[r#"
-            DecodeError {
-                msg: "Unexpected end of input",
+            Error {
+                msg: "unexpected end of input",
                 pos: Some(
                     9,
                 ),
@@ -975,8 +975,8 @@ mod tests {
     #[test]
     fn time_rejects_missing_colon() {
         expect![[r#"
-            DecodeError {
-                msg: "Unexpected character",
+            Error {
+                msg: "unexpected character",
                 pos: Some(
                     2,
                 ),
@@ -988,8 +988,8 @@ mod tests {
     #[test]
     fn time_rejects_non_digit_minute() {
         expect![[r#"
-            DecodeError {
-                msg: "Expected digit",
+            Error {
+                msg: "expected digit",
                 pos: Some(
                     3,
                 ),
@@ -1001,8 +1001,8 @@ mod tests {
     #[test]
     fn time_rejects_truncated_seconds() {
         expect![[r#"
-            DecodeError {
-                msg: "Unexpected end of input",
+            Error {
+                msg: "unexpected end of input",
                 pos: Some(
                     7,
                 ),
@@ -1054,14 +1054,14 @@ mod tests {
             "Sun, 06 Nov 1994 23:59:59 GMT",
         ]);
         expect![[r#"
-            "Sun, 00 Nov 1994 08:49:37 GMT" => DecodeError: Date out of range at position 5
-            "Sun, 32 Nov 1994 08:49:37 GMT" => DecodeError: Date out of range at position 5
-            "Sunday, 32-Nov-94 08:49:37 GMT" => DecodeError: Date out of range at position 8
-            "Sun Nov 32 08:49:37 1994" => DecodeError: Date out of range at position 4
-            "Sun Nov  0 08:49:37 1994" => DecodeError: Date out of range at position 4
-            "Sun, 06 Nov 1994 24:49:37 GMT" => DecodeError: Time out of range at position 17
-            "Sun, 06 Nov 1994 08:60:37 GMT" => DecodeError: Time out of range at position 17
-            "Sun, 06 Nov 1994 08:49:60 GMT" => DecodeError: Time out of range at position 17
+            "Sun, 00 Nov 1994 08:49:37 GMT" => date out of range at position 5
+            "Sun, 32 Nov 1994 08:49:37 GMT" => date out of range at position 5
+            "Sunday, 32-Nov-94 08:49:37 GMT" => date out of range at position 8
+            "Sun Nov 32 08:49:37 1994" => date out of range at position 4
+            "Sun Nov  0 08:49:37 1994" => date out of range at position 4
+            "Sun, 06 Nov 1994 24:49:37 GMT" => time out of range at position 17
+            "Sun, 06 Nov 1994 08:60:37 GMT" => time out of range at position 17
+            "Sun, 06 Nov 1994 08:49:60 GMT" => time out of range at position 17
             "Sun, 31 Nov 1994 08:49:37 GMT" => Sun, 31 Nov 1994 08:49:37 GMT
             "Sun, 06 Nov 1994 23:59:59 GMT" => Sun, 06 Nov 1994 23:59:59 GMT
         "#]]
@@ -1131,8 +1131,8 @@ mod tests {
     fn decode_rejects_invalid_dayname() {
         let err = decode("Funday, 06 Nov 1994 08:49:37 GMT").expect_err("expected decode to fail");
         expect![[r#"
-            DecodeError {
-                msg: "Invalid day name",
+            Error {
+                msg: "invalid day name",
                 pos: Some(
                     0,
                 ),
@@ -1148,8 +1148,8 @@ mod tests {
         // expected next.
         let err = decode("Sun 06 Nov 1994").expect_err("expected decode to fail");
         expect![[r#"
-            DecodeError {
-                msg: "Invalid month value",
+            Error {
+                msg: "invalid month value",
                 pos: Some(
                     4,
                 ),
@@ -1162,8 +1162,8 @@ mod tests {
     fn decode_rejects_imf_fixdate_missing_gmt() {
         let err = decode("Sun, 06 Nov 1994 08:49:37 ").expect_err("expected decode to fail");
         expect![[r#"
-            DecodeError {
-                msg: "Expected 'GMT'",
+            Error {
+                msg: "expected 'GMT'",
                 pos: Some(
                     26,
                 ),
@@ -1176,8 +1176,8 @@ mod tests {
     fn decode_rejects_truncated_input() {
         let err = decode("Sun, 06 Nov").expect_err("expected decode to fail");
         expect![[r#"
-            DecodeError {
-                msg: "Unexpected end of input",
+            Error {
+                msg: "unexpected end of input",
                 pos: Some(
                     11,
                 ),
@@ -1190,8 +1190,8 @@ mod tests {
     fn decode_rejects_empty_input() {
         let err = decode("").expect_err("expected decode to fail");
         expect![[r#"
-            DecodeError {
-                msg: "Invalid day name",
+            Error {
+                msg: "invalid day name",
                 pos: Some(
                     0,
                 ),
@@ -1210,12 +1210,13 @@ mod tests {
             "Sun Nov  6 08:49:37 1994!",
         ]);
         expect![[r#"
-            "Sun, 06 Nov 1994 08:49:37 GMT " => DecodeError: Trailing data after HTTP date at position 29
-            "Sun, 06 Nov 1994 08:49:37 GMT 123" => DecodeError: Trailing data after HTTP date at position 29
-            "Sun, 06 Nov 1994 08:49:37 GMT." => DecodeError: Trailing data after HTTP date at position 29
-            "Sunday, 06-Nov-94 08:49:37 GMT extra" => DecodeError: Trailing data after HTTP date at position 30
-            "Sun Nov  6 08:49:37 1994!" => DecodeError: Trailing data after HTTP date at position 24
-        "#]].assert_eq(&actual);
+            "Sun, 06 Nov 1994 08:49:37 GMT " => trailing data after HTTP date at position 29
+            "Sun, 06 Nov 1994 08:49:37 GMT 123" => trailing data after HTTP date at position 29
+            "Sun, 06 Nov 1994 08:49:37 GMT." => trailing data after HTTP date at position 29
+            "Sunday, 06-Nov-94 08:49:37 GMT extra" => trailing data after HTTP date at position 30
+            "Sun Nov  6 08:49:37 1994!" => trailing data after HTTP date at position 24
+        "#]]
+        .assert_eq(&actual);
     }
 
     // A fixed valid `DateTime` used by the constructor tests below.
