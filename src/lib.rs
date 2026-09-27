@@ -243,15 +243,23 @@ enum Format {
     Asctime,
 }
 
-impl Format {
-    #[rustfmt::skip]
-    fn toks(self) -> &'static [Tok] {
-        match self {
-            Format::ImfFixdate => &[DayShort, Lit(", "), Day2, Lit(" "), Month, Lit(" "), Year(4), Lit(" "), Hms, Lit(" GMT")],
-            Format::Rfc850 => &[DayLong, Lit(", "), Day2, Lit("-"), Month, Lit("-"), Year(2), Lit(" "), Hms, Lit(" GMT")],
-            Format::Asctime => &[DayShort, Lit(" "), Month, Lit(" "), DaySp, Lit(" "), Hms, Lit(" "), Year(4)],
+/// Runs `$body` once for each token of `$format`, with `$tok` bound to that
+/// token. Each token is a constant, so the compiler removes any `match` on it
+/// and each format becomes straight-line code.
+macro_rules! for_each_tok {
+    ($format:expr, $tok:ident => $body:expr) => {
+        match $format {
+            Format::ImfFixdate => for_each_tok!(@ $tok => $body; DayShort, Lit(", "), Day2, Lit(" "), Month, Lit(" "), Year(4), Lit(" "), Hms, Lit(" GMT")),
+            Format::Rfc850 => for_each_tok!(@ $tok => $body; DayLong, Lit(", "), Day2, Lit("-"), Month, Lit("-"), Year(2), Lit(" "), Hms, Lit(" GMT")),
+            Format::Asctime => for_each_tok!(@ $tok => $body; DayShort, Lit(" "), Month, Lit(" "), DaySp, Lit(" "), Hms, Lit(" "), Year(4)),
         }
-    }
+    };
+    (@ $tok:ident => $body:expr; $($t:expr),*) => {{
+        $({
+            let $tok = $t;
+            $body;
+        })*
+    }};
 }
 
 impl HttpDate {
@@ -440,10 +448,12 @@ impl<'a> Decoder<'a> {
     fn dayname(&mut self, long: bool) -> Result<DayName, Error> {
         let start = self.pos;
         let s = self.string();
-        DAYS.iter()
-            .find(|&&(_, short, full)| s == if long { full } else { short })
-            .map(|&(d, ..)| d)
-            .ok_or_else(|| Error::new("invalid day name").at(start))
+        for (d, short, full) in DAYS {
+            if s == if long { full } else { short } {
+                return Ok(d);
+            }
+        }
+        Err(Error::new("invalid day name").at(start))
     }
 
     /// Reads the asctime day of the month: a space and one digit, or two digits.
@@ -467,7 +477,7 @@ impl<'a> Decoder<'a> {
         };
         // Where the date starts, so that a range error points at it.
         let mut date_start = None;
-        for &tok in format.toks() {
+        for_each_tok!(format, tok => {
             let start = self.pos;
             match tok {
                 Lit(s) => s.bytes().try_for_each(|b| self.expect(b))?,
@@ -482,7 +492,7 @@ impl<'a> Decoder<'a> {
             if matches!(tok, Day2 | DaySp | Month | Year(_)) {
                 date_start.get_or_insert(start);
             }
-        }
+        });
         let date = Date::new(year, month, day).map_err(|e| e.at(date_start.unwrap_or_default()))?;
         // The RFC 9110 `HTTP-date` grammar spans the whole field value, so any
         // leftover input means `buf` is not a well-formed HTTP date.
@@ -508,11 +518,6 @@ impl<'a> Decoder<'a> {
         let second = self.digits_u8(2)?;
         Time::new(hour, minute, second).map_err(|e| e.at(start))
     }
-}
-
-/// Returns the error that got further into the input.
-fn furthest(a: Error, b: Error) -> Error {
-    if b.pos > a.pos { b } else { a }
 }
 
 /// Parses an HTTP date from its textual representation.
@@ -573,12 +578,15 @@ fn furthest(a: Error, b: Error) -> Error {
 /// assert!(decode("not a date").is_err());
 /// ```
 pub fn decode(buf: &str) -> Result<HttpDate, Error> {
-    // Like Prolog trying each `http_date//2` clause in turn. If every format
-    // fails, report the one that got furthest.
-    let parse = |format| Decoder::new(buf).parse(format);
-    parse(Format::ImfFixdate)
-        .or_else(|a| parse(Format::Rfc850).map_err(|b| furthest(a, b)))
-        .or_else(|a| parse(Format::Asctime).map_err(|b| furthest(a, b)))
+    // The day name and the byte after it decide the format: a long name is
+    // RFC 850, and a short name is asctime if a space follows, else IMF-fixdate.
+    let name_len = buf.bytes().take_while(u8::is_ascii_alphabetic).count();
+    let format = match (name_len, buf.as_bytes().get(name_len)) {
+        (3, Some(b' ')) => Format::Asctime,
+        (3, _) => Format::ImfFixdate,
+        _ => Format::Rfc850,
+    };
+    Decoder::new(buf).parse(format)
 }
 
 /* ------------------- encoder ------------------- */
@@ -615,7 +623,7 @@ impl fmt::Display for HttpDate {
             date,
             time,
         } = self.dt;
-        for &tok in self.format.toks() {
+        for_each_tok!(self.format, tok => {
             match tok {
                 Lit(s) => f.write_str(s),
                 DayShort => f.write_str(dayname.short()),
@@ -628,7 +636,7 @@ impl fmt::Display for HttpDate {
                 Year(n) => write!(f, "{:0n$}", date.year),
                 Hms => write!(f, "{:02}:{:02}:{:02}", time.hour, time.minute, time.second),
             }?;
-        }
+        });
         Ok(())
     }
 }
