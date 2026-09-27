@@ -7,8 +7,10 @@
 //!    re-encoding and re-decoding must yield the same value
 //!    (`test_decode_no_crash` and `test_decode_encode_stable`);
 //! 2. `encode` → `decode` round-trips for each of the three formats;
-//! 3. a corpus of known-good examples round-trips (`test_corpus`);
-//! 4. malformed inputs are rejected (`test_malformed`).
+//! 3. a corpus of known-good examples round-trips (`test_corpus`).
+//!
+//! `test_malformed` lives in `tests/decode.rs`, which also checks each
+//! error message and position.
 
 use http_date::{Date, DateTime, DayName, HttpDate, Time, decode, encode};
 use proptest::prelude::*;
@@ -164,50 +166,6 @@ fn corpus_decodes_and_round_trips() {
 
     for (input, expected) in cases {
         assert_eq!(&decode(input).unwrap(), expected, "decode({input:?})");
-        let s = encode(expected);
-        assert_eq!(&decode(&s).unwrap(), expected, "round-trip of {input:?}");
-    }
-}
-
-/// Single-digit asctime days are space-padded to width 2 (parity:
-/// `test_asctime_day_width`).
-#[test]
-fn asctime_single_digit_day_padding() {
-    let cases = [
-        "Sun Nov  1 00:00:00 2000",
-        "Sun Nov  9 00:00:00 2000",
-        "Sun Nov 10 00:00:00 2000",
-        "Sun Nov 28 00:00:00 2000",
-    ];
-    for input in cases {
-        let date = decode(input).unwrap();
-        assert_eq!(
-            decode(&encode(&date)).unwrap(),
-            date,
-            "round-trip of {input:?}"
-        );
-    }
-}
-
-/// Malformed inputs must be rejected (parity: `test_malformed`).
-#[test]
-fn malformed_inputs_are_rejected() {
-    let cases = [
-        "",
-        "XXX, 06 Nov 1994 08:49:37 GMT",
-        "Sun, 06 Xxx 1994 08:49:37 GMT",
-        "Sun, 06 Nov 1994 08:49:37 PST",
-        "Sun, 6 Nov 1994 08:49:37 GMT",
-        "Sunday, 06-Nov-1994 08:49:37 GMT",
-        "Sun, 06 Nov 1994",
-        "not a date",
-        "Sun Nov  6 08:49:37",
-        "Sunday, 06-Nov-94",
-        "Sun, 32 Nov 1994 08:49:37 GMT",
-        "Sun, 06 Nov 1994 24:00:00 GMT",
-        "Sun, 06 Nov 1994 08:60:00 GMT",
-    ];
-    for input in cases {
-        assert!(decode(input).is_err(), "expected {input:?} to be rejected");
+        assert_eq!(&encode(expected), input, "encode({expected:?})");
     }
 }
