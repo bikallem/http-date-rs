@@ -26,6 +26,10 @@ fmt:
 fmt-check:
     cargo fmt --check
 
+# Time decode and encode for each date format (release build).
+bench:
+    cargo bench --bench decode
+
 # Build the API documentation.
 doc:
     cargo doc --no-deps --all-features
