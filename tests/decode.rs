@@ -80,7 +80,7 @@ fn decode_rejects_malformed_input() {
         "Wednes, 06-Nov-94 08:49:37 GMT" => invalid day name at position 0
         ", 06 Nov 1994 08:49:37 GMT" => invalid day name at position 0
         "Sun" => unexpected end of input at position 3
-        "Sun;06 Nov 1994 08:49:37 GMT" => unexpected character at position 3
+        "Sun;06 Nov 1994 08:49:37 GMT" => expected ',' or ' ' after day name at position 3
         "Sun,06 Nov 1994 08:49:37 GMT" => unexpected character at position 4
         "Sun 06 Nov 1994" => invalid month value at position 4
         "Sun, 0x Nov 1994 08:49:37 GMT" => expected digit at position 6
@@ -91,12 +91,12 @@ fn decode_rejects_malformed_input() {
         "Sun, 06 Nov 1994 0849:37 GMT" => unexpected character at position 19
         "Sun, 06 Nov 1994 08:x9:37 GMT" => expected digit at position 20
         "Sun, 06 Nov 1994 08:49:3" => unexpected end of input at position 24
-        "Sun, 06 Nov 1994 08:49:37 " => unexpected end of input at position 26
+        "Sun, 06 Nov 1994 08:49:37 " => expected 'GMT' at position 26
         "Sunday 06-Nov-94 08:49:37 GMT" => unexpected character at position 6
         "Sunday, 06 Nov 94 08:49:37 GMT" => unexpected character at position 10
         "Sun, 6 Nov 1994 08:49:37 GMT" => expected digit at position 6
         "Sunday, 06-Nov-1994 08:49:37 GMT" => unexpected character at position 17
-        "Sun, 06 Nov 1994 08:49:37 PST" => unexpected character at position 26
+        "Sun, 06 Nov 1994 08:49:37 PST" => expected 'GMT' at position 26
         "Sunday, 06-Nov-94" => unexpected end of input at position 17
         "Sun Nov  6 08:49:37" => unexpected end of input at position 19
     "#]]

@@ -47,6 +47,12 @@ use std::fmt;
 #[cfg(feature = "chrono")]
 pub mod chrono;
 
+#[derive(Clone, Copy)]
+enum DayNameTok {
+    Short(DayName),
+    Long(DayName),
+}
+
 /// The day of the week as used in HTTP date values.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DayName {
@@ -93,6 +99,12 @@ const DAYS: [(DayName, &str, &str); 7] = [
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+#[derive(Clone, Copy)]
+enum PunctuationTok {
+    Comma,
+    Space,
+}
 
 /// The calendar date portion of an HTTP date.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -208,30 +220,6 @@ pub struct HttpDate {
     dt: DateTime,
 }
 
-/// One piece of a date format. `decode` and `Display` read the same tokens,
-/// so the layout of each format is written once.
-#[derive(Clone, Copy)]
-enum Tok {
-    /// Literal text, e.g. `", "`.
-    Lit(&'static str),
-    /// Short day name, e.g. `Sun`.
-    DayShort,
-    /// Long day name, e.g. `Sunday`.
-    DayLong,
-    /// Day of the month as two digits, e.g. `06`.
-    Day2,
-    /// Day of the month padded with a space, e.g. ` 6` or `16`.
-    DaySp,
-    /// Month name, e.g. `Nov`.
-    Month,
-    /// Year with this many digits, e.g. `1994` or `94`.
-    Year(usize),
-    /// Time as `HH:MM:SS`, e.g. `08:49:37`.
-    Hms,
-}
-
-use Tok::{Day2, DayLong, DayShort, DaySp, Hms, Lit, Month, Year};
-
 /// The textual format of an [`HttpDate`].
 ///
 /// Private: `HttpDate` is constructor-only, so the RFC 850 two-digit-year
@@ -241,25 +229,6 @@ enum Format {
     ImfFixdate,
     Rfc850,
     Asctime,
-}
-
-/// Runs `$body` once for each token of `$format`, with `$tok` bound to that
-/// token. Each token is a constant, so the compiler removes any `match` on it
-/// and each format becomes straight-line code.
-macro_rules! for_each_tok {
-    ($format:expr, $tok:ident => $body:expr) => {
-        match $format {
-            Format::ImfFixdate => for_each_tok!(@ $tok => $body; DayShort, Lit(", "), Day2, Lit(" "), Month, Lit(" "), Year(4), Lit(" "), Hms, Lit(" GMT")),
-            Format::Rfc850 => for_each_tok!(@ $tok => $body; DayLong, Lit(", "), Day2, Lit("-"), Month, Lit("-"), Year(2), Lit(" "), Hms, Lit(" GMT")),
-            Format::Asctime => for_each_tok!(@ $tok => $body; DayShort, Lit(" "), Month, Lit(" "), DaySp, Lit(" "), Hms, Lit(" "), Year(4)),
-        }
-    };
-    (@ $tok:ident => $body:expr; $($t:expr),*) => {{
-        $({
-            let $tok = $t;
-            $body;
-        })*
-    }};
 }
 
 impl HttpDate {
@@ -397,6 +366,21 @@ impl<'a> Decoder<'a> {
         }
     }
 
+    #[inline]
+    fn space(&mut self) -> Result<(), Error> {
+        self.expect(b' ')
+    }
+
+    #[inline]
+    fn comma(&mut self) -> Result<(), Error> {
+        self.expect(b',')
+    }
+
+    #[inline]
+    fn colon(&mut self) -> Result<(), Error> {
+        self.expect(b':')
+    }
+
     fn month(&mut self) -> Result<u8, Error> {
         let m = self
             .buf
@@ -444,79 +428,138 @@ impl<'a> Decoder<'a> {
         &self.buf[start..self.pos]
     }
 
-    /// Reads a short (`Sun`) or long (`Sunday`) day name.
-    fn dayname(&mut self, long: bool) -> Result<DayName, Error> {
+    fn year(&mut self) -> Result<u16, Error> {
+        self.digits(4)
+    }
+
+    fn day(&mut self) -> Result<u8, Error> {
+        self.digits_u8(2)
+    }
+
+    fn dayname_tok(&mut self) -> Result<DayNameTok, Error> {
         let start = self.pos;
         let s = self.string();
-        for (d, short, full) in DAYS {
-            if s == if long { full } else { short } {
-                return Ok(d);
+        for (d, short, long) in DAYS {
+            if s == short {
+                return Ok(DayNameTok::Short(d));
+            }
+            if s == long {
+                return Ok(DayNameTok::Long(d));
             }
         }
         Err(Error::new("invalid day name").at(start))
     }
 
-    /// Reads the asctime day of the month: a space and one digit, or two digits.
-    fn day_sp(&mut self) -> Result<u8, Error> {
-        if self.byte_at(self.pos)? == b' ' {
-            self.advance(1);
-            self.digits_u8(1)
-        } else {
-            self.digits_u8(2)
-        }
+    fn punctuation_tok(&mut self) -> Result<PunctuationTok, Error> {
+        let c = self.byte_at(self.pos)?;
+        let tok = match c {
+            b',' => PunctuationTok::Comma,
+            b' ' => PunctuationTok::Space,
+            _ => return Err(Error::new("expected ',' or ' ' after day name").at(self.pos)),
+        };
+        self.advance(1);
+        Ok(tok)
     }
 
-    /// Parses the whole input as `format`, one token at a time.
-    fn parse(mut self, format: Format) -> Result<HttpDate, Error> {
-        let mut dayname = DayName::Mon;
-        let (mut year, mut month, mut day) = (0, 0, 0);
-        let mut time = Time {
-            hour: 0,
-            minute: 0,
-            second: 0,
-        };
-        // Where the date starts, so that a range error points at it.
-        let mut date_start = None;
-        for_each_tok!(format, tok => {
-            let start = self.pos;
-            match tok {
-                Lit(s) => s.bytes().try_for_each(|b| self.expect(b))?,
-                DayShort => dayname = self.dayname(false)?,
-                DayLong => dayname = self.dayname(true)?,
-                Day2 => day = self.digits_u8(2)?,
-                DaySp => day = self.day_sp()?,
-                Month => month = self.month()?,
-                Year(n) => year = self.digits(n)?,
-                Hms => time = self.time()?,
-            }
-            if matches!(tok, Day2 | DaySp | Month | Year(_)) {
-                date_start.get_or_insert(start);
-            }
-        });
-        let date = Date::new(year, month, day).map_err(|e| e.at(date_start.unwrap_or_default()))?;
-        // The RFC 9110 `HTTP-date` grammar spans the whole field value, so any
-        // leftover input means `buf` is not a well-formed HTTP date.
-        if self.pos != self.buf.len() {
-            return Err(Error::new("trailing data after HTTP date").at(self.pos));
-        }
-        Ok(HttpDate {
-            format,
-            dt: DateTime {
-                dayname,
-                date,
-                time,
-            },
-        })
+    fn date1(&mut self) -> Result<Date, Error> {
+        let start = self.pos;
+        let day = self.day()?;
+        self.space()?;
+        let month = self.month()?;
+        self.space()?;
+        let year = self.year()?;
+        Date::new(year, month, day).map_err(|e| e.at(start))
     }
 
     fn time(&mut self) -> Result<Time, Error> {
         let start = self.pos;
         let hour = self.digits_u8(2)?;
-        self.expect(b':')?;
+        self.colon()?;
         let minute = self.digits_u8(2)?;
-        self.expect(b':')?;
+        self.colon()?;
         let second = self.digits_u8(2)?;
         Time::new(hour, minute, second).map_err(|e| e.at(start))
+    }
+
+    fn gmt(&mut self) -> Result<(), Error> {
+        let start = self.pos;
+        if self.string() != "GMT" {
+            return Err(Error::new("expected 'GMT'").at(start));
+        }
+        Ok(())
+    }
+
+    // IMF-fixdate: day-name "," SP date1 SP time SP "GMT"
+    fn imf_fixdate(&mut self, dayname: DayName) -> Result<HttpDate, Error> {
+        self.space()?;
+        let date = self.date1()?;
+        self.space()?;
+        let time = self.time()?;
+        self.space()?;
+        self.gmt()?;
+        Ok(HttpDate::imf_fixdate(DateTime {
+            dayname,
+            date,
+            time,
+        }))
+    }
+
+    fn date2(&mut self) -> Result<Date, Error> {
+        let start = self.pos;
+        let day = self.day()?;
+        self.expect(b'-')?;
+        let month = self.month()?;
+        self.expect(b'-')?;
+        let year = self.digits(2)?;
+        Date::new(year, month, day).map_err(|e| e.at(start))
+    }
+
+    // RFC 850 date: day-name "," SP date2 SP time SP "GMT"
+    fn rfc850_date(&mut self, dayname: DayName) -> Result<HttpDate, Error> {
+        self.comma()?;
+        self.space()?;
+        let date = self.date2()?;
+        self.space()?;
+        let time = self.time()?;
+        self.space()?;
+        self.gmt()?;
+        let date = DateTime {
+            dayname,
+            date,
+            time,
+        };
+        HttpDate::rfc850(date)
+    }
+
+    fn date3(&mut self) -> Result<(u8, u8), Error> {
+        // month
+        let m = self.month()?;
+        self.space()?;
+        // day
+        let d = match self.byte_at(self.pos)? {
+            b' ' => {
+                self.space()?;
+                self.digits_u8(1)?
+            }
+            _ => self.digits_u8(2)?,
+        };
+        Ok((m, d))
+    }
+
+    // asctime date: day-name SP month SP (2DIGIT / (SP 1DIGIT)) SP time SP 4DIGIT
+    fn asctime_date(&mut self, dayname: DayName) -> Result<HttpDate, Error> {
+        let start = self.pos;
+        let (month, day) = self.date3()?;
+        self.space()?;
+        let time = self.time()?;
+        self.space()?;
+        let year = self.year()?;
+        let date = Date::new(year, month, day).map_err(|e| e.at(start))?;
+        Ok(HttpDate::asctime(DateTime {
+            dayname,
+            date,
+            time,
+        }))
     }
 }
 
@@ -578,15 +621,20 @@ impl<'a> Decoder<'a> {
 /// assert!(decode("not a date").is_err());
 /// ```
 pub fn decode(buf: &str) -> Result<HttpDate, Error> {
-    // The day name and the byte after it decide the format: a long name is
-    // RFC 850, and a short name is asctime if a space follows, else IMF-fixdate.
-    let name_len = buf.bytes().take_while(u8::is_ascii_alphabetic).count();
-    let format = match (name_len, buf.as_bytes().get(name_len)) {
-        (3, Some(b' ')) => Format::Asctime,
-        (3, _) => Format::ImfFixdate,
-        _ => Format::Rfc850,
-    };
-    Decoder::new(buf).parse(format)
+    let mut decoder = Decoder::new(buf);
+    let date = match decoder.dayname_tok()? {
+        DayNameTok::Long(dayname) => decoder.rfc850_date(dayname),
+        DayNameTok::Short(dayname) => match decoder.punctuation_tok()? {
+            PunctuationTok::Comma => decoder.imf_fixdate(dayname),
+            PunctuationTok::Space => decoder.asctime_date(dayname),
+        },
+    }?;
+    // The RFC 9110 `HTTP-date` grammar spans the whole field value, so any
+    // leftover input means `buf` is not a well-formed HTTP date.
+    if decoder.pos != decoder.buf.len() {
+        return Err(Error::new("trailing data after HTTP date").at(decoder.pos));
+    }
+    Ok(date)
 }
 
 /* ------------------- encoder ------------------- */
@@ -618,25 +666,48 @@ pub fn encode(date: &HttpDate) -> String {
 
 impl fmt::Display for HttpDate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let DateTime {
-            dayname,
-            date,
-            time,
-        } = self.dt;
-        for_each_tok!(self.format, tok => {
-            match tok {
-                Lit(s) => f.write_str(s),
-                DayShort => f.write_str(dayname.short()),
-                DayLong => f.write_str(dayname.long()),
-                Day2 => write!(f, "{:02}", date.day),
-                DaySp => write!(f, "{:2}", date.day),
-                Month => f.write_str(month_name(date.month)),
-                // `Format` is private, so `Format::Rfc850` implies year <= 99
-                // by construction (`HttpDate::rfc850`) and fits `Year(2)`.
-                Year(n) => write!(f, "{:0n$}", date.year),
-                Hms => write!(f, "{:02}:{:02}:{:02}", time.hour, time.minute, time.second),
-            }?;
-        });
-        Ok(())
+        let dt = &self.dt;
+        let month = month_name(dt.date.month());
+        let day = dt.date.day();
+        let year = dt.date.year();
+        let time = dt.time;
+
+        match self.format {
+            Format::ImfFixdate => write!(
+                f,
+                "{}, {:02} {} {:04} {:02}:{:02}:{:02} GMT",
+                dt.dayname.short(),
+                day,
+                month,
+                year,
+                time.hour(),
+                time.minute(),
+                time.second(),
+            ),
+            // `format` is private, so `Format::Rfc850` implies year <= 99 by
+            // construction (`HttpDate::rfc850`).
+            Format::Rfc850 => write!(
+                f,
+                "{}, {:02}-{}-{:02} {:02}:{:02}:{:02} GMT",
+                dt.dayname.long(),
+                day,
+                month,
+                year,
+                time.hour(),
+                time.minute(),
+                time.second(),
+            ),
+            Format::Asctime => write!(
+                f,
+                "{} {} {:2} {:02}:{:02}:{:02} {:04}",
+                dt.dayname.short(),
+                month,
+                day,
+                time.hour(),
+                time.minute(),
+                time.second(),
+                year,
+            ),
+        }
     }
 }
